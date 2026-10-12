@@ -54,6 +54,28 @@ Do not move tests, CI workflows, source-only tooling, screenshots, build scripts
 14. Preserve the plugin's installed destination name and runtime behavior unless the user explicitly asks for behavioral changes.
 15. Run the repository's existing validation/tests after reorganizing it and show the resulting Git diff before release.
 
+## Future-capable / dual-mode plugin design
+
+When creating a new plugin or materially revising `device.json`, do not design only for the capabilities of the current basic CrossPoint firmware if the same package can degrade gracefully. Prefer the dual-mode / progressive-enhancement model documented in `PLUGIN_REPOSITORY_STANDARD.md`.
+
+Agent rules:
+
+1. Preserve a complete baseline path using fields current CrossPoint understands.
+2. Add optional enhanced fields beside the baseline so newer/capability-aware firmware can provide richer behavior without requiring a separate plugin fork.
+3. For catalog plugins, prefer the tested pattern of shipping all three when applicable:
+   - `browse.url` as a valid baseline/fallback catalog request;
+   - embedded `browse.lists` as the basic-firmware navigation snapshot;
+   - `browse.lists_url` as the preferred dynamic list index for capable firmware.
+4. If generated catalogs are used, generate the embedded static list snapshot and the remote dynamic list index from the same source data.
+5. Use `compatibility.requires` only for a **hard dependency** that makes the plugin unusable when absent. Do not require a capability merely because it improves presentation.
+6. Prefer generic firmware capabilities and plugin API levels over exact firmware-ID checks. Do not special-case Razor-Crest when a named capability can express the requirement.
+7. Treat unknown enhanced fields as optional progressive enhancements unless the firmware contract explicitly requires otherwise.
+8. Keep the baseline experience useful on current CrossPoint even if enhanced UI, images, settings, notices, cache, or other newer fields are ignored.
+
+The physically tested reference implementation is [Wallpaper Downloader](https://github.com/jadehawk/wallpapers.crosspoint-plugin), especially the `v0.1.1` `device.json` and catalog generator. The same installed plugin package was tested on current CrossPoint `develop` and Razor-Crest: basic firmware used the embedded catalog/list UI, while capable firmware used the live list index and richer UI/features.
+
+Before inventing a second firmware-specific plugin package, first determine whether a single dual-mode package can provide a reasonable baseline and progressively enhance on newer firmware.
+
 ## Release contract
 
 For automatic Plugin Hub discovery:
@@ -81,7 +103,10 @@ Before declaring the repository Plugin Hub-ready, verify all of the following:
 - [ ] every declared runtime file actually exists;
 - [ ] development-only files remain outside the payload;
 - [ ] release/catalog tooling points at the payload directory;
-- [ ] existing tests pass after the move.
+- [ ] existing tests pass after the move;
+- [ ] a new or materially revised plugin has been checked for a usable basic-CrossPoint fallback;
+- [ ] optional enhanced behavior does not incorrectly appear in `compatibility.requires`;
+- [ ] catalog plugins that can be dual-mode use static `browse.lists` plus dynamic `browse.lists_url` when appropriate.
 
 ## Plugin Hub repository exception
 
