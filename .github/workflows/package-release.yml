@@ -52,7 +52,7 @@ jobs:
             --prefix=".crosspoint/plugins/pluginhub/" \
             --output="$asset" \
             "$release_tag" \
-            manifest.json device.json plugin.js README.md
+            manifest.json device.json plugin.js README.md DETAILS.md
 
           echo "Package contents:"
           unzip -Z1 "$asset"

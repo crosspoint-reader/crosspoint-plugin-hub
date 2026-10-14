@@ -36,6 +36,7 @@ example-plugin/
     ├── device.json            # at least device.json or plugin.js is required
     ├── plugin.js
     ├── README.md              # installable plugin README
+    ├── DETAILS.md             # optional curated on-device Details content
     └── assets/
         └── icon.png
 ```
@@ -51,7 +52,7 @@ plugin.js
 
 Both entry points may be present.
 
-The plugin README should travel with the plugin and therefore belongs inside the payload directory. Additional runtime files and nested runtime directories are allowed when they are declared in `manifest.json -> files`.
+The plugin README should travel with the plugin and therefore belongs inside the payload directory. Additional runtime files and nested runtime directories are allowed when they are declared in `manifest.json -> files`. Authors may also include an optional `DETAILS.md` beside it for concise, reader-focused content; declare it in `manifest.json -> files` so the file ships with the installed plugin.
 
 Automatic discovery currently expects exactly one root-level `*.crosspoint-plugin/` payload directory per repository. The preferred standard remains one repository per plugin.
 
@@ -91,6 +92,7 @@ Plugin IDs use lowercase letters, digits, and hyphens.
     "device.json",
     "plugin.js",
     "README.md",
+    "DETAILS.md",
     "assets/icon.png"
   ]
 }
@@ -112,6 +114,8 @@ String fields may be written as a single string, a comma-separated string, or a 
 Paths in `files` are relative to the payload directory, not the repository root. Do not prefix entries with `<plugin-id>.crosspoint-plugin/`.
 
 Every file required by the installed plugin should be declared in `files`. If `files` is omitted, Plugin Hub falls back to the conventional payload files `manifest.json`, `device.json`, `plugin.js`, and `README.md` when present. Unsafe paths are rejected.
+
+When a released payload declares and contains `DETAILS.md`, Plugin Hub may convert its safe Markdown subset (headings, paragraphs, lists, bold, and italics) to bounded semantic HTML during catalog generation. The generated catalog adds an optional `details` object with an HTML URL. This metadata is additive: older firmware ignores it, and newer firmware falls back to the normal description/author/version/repository view if the rich page is unavailable. Do not make `catalog.item_details` a hard compatibility requirement unless the plugin truly cannot function without that presentation feature.
 
 Development-only files outside the payload directory are never installed.
 

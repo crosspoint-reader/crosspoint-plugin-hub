@@ -5,6 +5,7 @@
 - Compact generated catalogs and dynamically split oversized Community catalogs into balanced alphabetical ranges below the firmware-safe byte limit.
 - Publish a dynamic catalog-list index so native Plugin Hub can follow Community catalog splits without requiring a plugin update.
 - Add `blacklist.json`; repositories listed there are omitted from every generated catalog before whitelist or Official classification is applied.
+- Add optional curated `DETAILS.md` payload content, convert its safe Markdown subset to versioned semantic HTML during catalog generation, and publish additive rich-details metadata for capable firmware with backward-compatible fallback.
 - Add Plugin Hub itself to the Official catalog so installed copies can be updated through the normal catalog bundle update path.
 - Reset automatic discovery to the folder-first repository standard: one plugin repository with exactly one direct child `<plugin-id>.crosspoint-plugin/` installable payload directory.
 - Keep Plugin Hub itself as the intentional root-layout exception so its firmware bootstrap, root catalogs, and production `stable` branch remain unchanged.

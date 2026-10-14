@@ -9,6 +9,7 @@
     "manifest.json",
     "device.json",
     "plugin.js",
-    "README.md"
+    "README.md",
+    "DETAILS.md"
   ]
 }

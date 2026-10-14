@@ -15,10 +15,11 @@ SPEC.loader.exec_module(build_catalog)
 
 
 class FakeClient:
-    def __init__(self, manifest=None, root=None, directories=None):
+    def __init__(self, manifest=None, root=None, directories=None, text_files=None):
         self.manifest = manifest or {}
         self.root = root or []
         self.directories = directories or {}
+        self.text_files = text_files or {}
 
     def root_contents(self, full_name, ref):
         return self.root
@@ -28,6 +29,9 @@ class FakeClient:
 
     def json_file(self, full_name, ref, path):
         return self.manifest
+
+    def text_file(self, full_name, ref, path, max_bytes=build_catalog.MAX_DETAILS_SOURCE_BYTES):
+        return self.text_files[path]
 
 
 class ReleaseAssetClient:
@@ -183,6 +187,89 @@ class CatalogBuilderTests(unittest.TestCase):
             "https://raw.githubusercontent.com/jadehawk/send2ereader.crosspoint-plugin/v0.1.2/send2ereader.crosspoint-plugin/",
         )
         self.assertEqual(entry["files"], client.manifest["files"])
+
+    def test_build_entry_reads_declared_details_markdown_from_release(self):
+        client = FakeClient(
+            manifest={
+                "name": "example",
+                "title": "Example",
+                "version": "1.2.3",
+                "files": ["manifest.json", "device.json", "DETAILS.md"],
+            },
+            root=[{"name": "example.crosspoint-plugin", "type": "dir"}],
+            directories={
+                "example.crosspoint-plugin": [
+                    {"name": "manifest.json", "type": "file"},
+                    {"name": "device.json", "type": "file"},
+                    {"name": "DETAILS.md", "type": "file"},
+                ]
+            },
+            text_files={"example.crosspoint-plugin/DETAILS.md": "# Example\n\n- Feature\n"},
+        )
+        repo = {
+            "full_name": "owner/example.crosspoint-plugin",
+            "name": "example.crosspoint-plugin",
+            "owner": {"login": "owner"},
+        }
+
+        entry = build_catalog.build_entry(client, repo, {"tag_name": "v1.2.3"})
+
+        self.assertIsNotNone(entry)
+        self.assertEqual(entry["_details_markdown"], "# Example\n\n- Feature\n")
+
+    def test_markdown_details_to_html_formats_supported_subset_and_escapes_html(self):
+        rendered = build_catalog.markdown_details_to_html(
+            "# Example\n\nSummary with **bold** and *italic* plus <script>alert(1)</script>.\n\n- One\n- Two\n"
+        )
+
+        self.assertIn("<h1>Example</h1>", rendered)
+        self.assertIn("<strong>bold</strong>", rendered)
+        self.assertIn("<em>italic</em>", rendered)
+        self.assertIn("<ul>", rendered)
+        self.assertIn("<li>One</li>", rendered)
+        self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt;", rendered)
+        self.assertNotIn("<script>", rendered)
+
+    def test_publish_details_assets_writes_versioned_html_and_refuses_same_version_rewrite(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "details"
+            plugin = {
+                "name": "example",
+                "version": "1.2.3",
+                "_details_markdown": "# Example\n\nOriginal details.\n",
+            }
+
+            changed = build_catalog.publish_details_assets(
+                [plugin],
+                output,
+                "jadehawk/PluginHub.crosspoint-plugin",
+                "main",
+            )
+
+            self.assertTrue(changed)
+            self.assertTrue((output / "example" / "1.2.3.html").exists())
+            self.assertEqual(
+                plugin["details"],
+                {
+                    "url": "https://raw.githubusercontent.com/jadehawk/PluginHub.crosspoint-plugin/main/details/example/1.2.3.html",
+                    "format": "html",
+                },
+            )
+            self.assertNotIn("_details_markdown", plugin)
+
+            with self.assertRaises(build_catalog.CatalogError):
+                build_catalog.publish_details_assets(
+                    [
+                        {
+                            "name": "example",
+                            "version": "1.2.3",
+                            "_details_markdown": "# Example\n\nChanged without a version bump.\n",
+                        }
+                    ],
+                    output,
+                    "jadehawk/PluginHub.crosspoint-plugin",
+                    "main",
+                )
 
     def test_build_entry_rejects_manifest_release_version_mismatch(self):
         client = FakeClient(

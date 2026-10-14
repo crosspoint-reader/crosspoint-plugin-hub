@@ -67,7 +67,8 @@ my-plugin/
     ├── manifest.json
     ├── device.json                   # at least device.json or plugin.js
     ├── plugin.js
-    └── README.md                     # travels with the installed plugin
+    ├── README.md                     # travels with the installed plugin
+    └── DETAILS.md                    # optional curated on-device Details content
 ```
 
 To publish through automatic discovery:
@@ -187,6 +188,7 @@ To make your plugin eligible for Plugin Hub:
    `manifest.json`. If `files` is omitted, Plugin Hub only considers the
    conventional payload files `manifest.json`, `device.json`, `plugin.js`, and
    `README.md`.
+   A declared `DETAILS.md` is also installed and can be converted by Plugin Hub into bounded semantic HTML for capable firmware; older firmware simply ignores the additive catalog metadata.
 7. Keep development-only files outside the payload directory.
 8. Set a three-part numeric `MAJOR.MINOR.PATCH` version in `manifest.json`,
    for example `1.2.0`.
@@ -214,7 +216,8 @@ search for `.xp-plugin` because that name also matches unrelated ecosystems.
     "manifest.json",
     "device.json",
     "plugin.js",
-    "README.md"
+    "README.md",
+    "DETAILS.md"
   ]
 }
 ```

@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import base64
 import datetime as dt
+import html
 import io
 import json
 import os
@@ -35,6 +36,10 @@ SEARCH_QUERIES = (
     'in:name "crosspoint-plugin"',
 )
 CONVENTIONAL_FILES = ("manifest.json", "device.json", "plugin.js", "README.md")
+DETAILS_FILE = "DETAILS.md"
+DETAILS_OUTPUT_DIR = "details"
+MAX_DETAILS_SOURCE_BYTES = 16 * 1024
+MAX_DETAILS_HTML_BYTES = 24 * 1024
 PLUGIN_DIRECTORY_SUFFIX = ".crosspoint-plugin"
 ROOT_LAYOUT_EXCEPTIONS = {"jadehawk/pluginhub.crosspoint-plugin"}
 VERSION_RE = re.compile(r"^[vV]?(\d+\.\d+\.\d+)$")
@@ -159,6 +164,26 @@ class GitHubClient:
             raise CatalogError(f"{path} must contain a JSON object in {full_name}@{ref}")
         return parsed
 
+    def text_file(self, full_name: str, ref: str, path: str, max_bytes: int = MAX_DETAILS_SOURCE_BYTES) -> str:
+        payload = self._request_json(
+            f"/repos/{full_name}/contents/{urllib.parse.quote(path, safe='/')}",
+            {"ref": ref},
+        )
+        if not isinstance(payload, dict) or payload.get("type") != "file":
+            raise CatalogError(f"{path} is not a file in {full_name}@{ref}")
+        size = payload.get("size")
+        if isinstance(size, int) and size > max_bytes:
+            raise CatalogError(f"{path} is too large in {full_name}@{ref}")
+        if payload.get("encoding") != "base64" or not isinstance(payload.get("content"), str):
+            raise CatalogError(f"{path} has an unsupported GitHub API encoding in {full_name}@{ref}")
+        try:
+            raw = base64.b64decode(payload["content"])
+            if len(raw) > max_bytes:
+                raise CatalogError(f"{path} is too large in {full_name}@{ref}")
+            return raw.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise CatalogError(f"{path} is not valid UTF-8 in {full_name}@{ref}") from exc
+
     def repository(self, full_name: str) -> dict[str, Any]:
         payload = self._request_json(f"/repos/{full_name}")
         if not isinstance(payload, dict):
@@ -234,6 +259,116 @@ class GitHubClient:
 def normalize_version(tag: str) -> str | None:
     match = VERSION_RE.fullmatch(tag.strip())
     return match.group(1) if match else None
+
+
+def _details_inline(text: str) -> str:
+    rendered = html.escape(text.strip(), quote=False)
+    rendered = re.sub(r"`([^`]+)`", r"\1", rendered)
+    rendered = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", rendered)
+    rendered = re.sub(r"(?<!\*)\*([^*]+)\*(?!\*)", r"<em>\1</em>", rendered)
+    return rendered
+
+
+def markdown_details_to_html(markdown: str) -> str:
+    if len(markdown.encode("utf-8")) > MAX_DETAILS_SOURCE_BYTES:
+        raise CatalogError("DETAILS.md exceeds the supported source size")
+
+    output: list[str] = []
+    paragraph: list[str] = []
+    in_list = False
+
+    def flush_paragraph() -> None:
+        nonlocal paragraph
+        if paragraph:
+            output.append(f"<p>{_details_inline(' '.join(paragraph))}</p>")
+            paragraph = []
+
+    def close_list() -> None:
+        nonlocal in_list
+        if in_list:
+            output.append("</ul>")
+            in_list = False
+
+    for raw_line in markdown.splitlines():
+        line = raw_line.strip()
+        if not line:
+            flush_paragraph()
+            close_list()
+            continue
+
+        heading = re.match(r"^(#{1,3})\s+(.+)$", line)
+        if heading:
+            flush_paragraph()
+            close_list()
+            level = len(heading.group(1))
+            output.append(f"<h{level}>{_details_inline(heading.group(2))}</h{level}>")
+            continue
+
+        if line.startswith("- "):
+            flush_paragraph()
+            if not in_list:
+                output.append("<ul>")
+                in_list = True
+            output.append(f"<li>{_details_inline(line[2:])}</li>")
+            continue
+
+        close_list()
+        paragraph.append(line)
+
+    flush_paragraph()
+    close_list()
+    rendered = "\n".join(output).strip() + "\n"
+    if len(rendered.encode("utf-8")) > MAX_DETAILS_HTML_BYTES:
+        raise CatalogError("rendered plugin details exceed the supported HTML size")
+    return rendered
+
+
+def publish_details_assets(
+    plugins: list[dict[str, Any]],
+    output_root: Path,
+    repository: str,
+    ref: str,
+) -> bool:
+    if REPOSITORY_RE.fullmatch(repository) is None:
+        raise CatalogError("catalog repository must be an owner/repository string")
+    changed = False
+    encoded_ref = urllib.parse.quote(ref, safe="")
+
+    for plugin in plugins:
+        markdown = plugin.pop("_details_markdown", None)
+        if not isinstance(markdown, str) or not markdown.strip():
+            continue
+        plugin_id = plugin.get("name")
+        version = plugin.get("version")
+        if not isinstance(plugin_id, str) or PLUGIN_ID_RE.fullmatch(plugin_id) is None:
+            raise CatalogError("plugin details require a safe plugin id")
+        if not isinstance(version, str) or normalize_version(version) is None:
+            raise CatalogError(f"plugin details require a valid version for {plugin_id}")
+
+        rendered = markdown_details_to_html(markdown)
+        relative = Path(plugin_id) / f"{version}.html"
+        target = output_root / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if target.exists():
+            existing = target.read_text(encoding="utf-8")
+            if existing != rendered:
+                raise CatalogError(
+                    f"refusing to rewrite details for {plugin_id} {version}; publish a new plugin version"
+                )
+        else:
+            target.write_text(rendered, encoding="utf-8", newline="\n")
+            changed = True
+
+        raw_path = (Path(DETAILS_OUTPUT_DIR) / relative).as_posix()
+        plugin["details"] = {
+            "url": (
+                f"https://raw.githubusercontent.com/{repository}/{encoded_ref}/"
+                f"{urllib.parse.quote(raw_path, safe='/')}"
+            ),
+            "format": "html",
+        }
+
+    return changed
 
 
 def derive_plugin_id(repo_name: str, manifest: dict[str, Any]) -> str | None:
@@ -778,33 +913,45 @@ def release_asset_plugins(
             title = manifest.get("title")
             description = manifest.get("description")
             author = manifest.get("author")
-            plugins.append(
-                {
-                    "name": plugin_id,
-                    "title": title if isinstance(title, str) and title else plugin_id,
-                    "description": (
-                        description
-                        if isinstance(description, str)
-                        else (repo.get("description") or "")
-                    ),
-                    "author": (
-                        author
-                        if isinstance(author, str)
-                        else repo.get("owner", {}).get("login", "")
-                    ),
-                    "version": version,
-                    "repository": full_name,
-                    "release": tag,
-                    "release_url": selected_release.get("html_url", ""),
-                    "release_asset": asset_name,
-                    "published_at": selected_release.get("published_at", ""),
-                    "base": (
-                        f"https://raw.githubusercontent.com/{catalog_repository}/main/"
-                        f"{urllib.parse.quote(mirror_rel, safe='/')}"
-                    ),
-                    "files": files,
-                }
-            )
+            entry = {
+                "name": plugin_id,
+                "title": title if isinstance(title, str) and title else plugin_id,
+                "description": (
+                    description
+                    if isinstance(description, str)
+                    else (repo.get("description") or "")
+                ),
+                "author": (
+                    author
+                    if isinstance(author, str)
+                    else repo.get("owner", {}).get("login", "")
+                ),
+                "version": version,
+                "repository": full_name,
+                "release": tag,
+                "release_url": selected_release.get("html_url", ""),
+                "release_asset": asset_name,
+                "published_at": selected_release.get("published_at", ""),
+                "base": (
+                    f"https://raw.githubusercontent.com/{catalog_repository}/main/"
+                    f"{urllib.parse.quote(mirror_rel, safe='/')}"
+                ),
+                "files": files,
+            }
+            if DETAILS_FILE in files:
+                details_payload = payloads.get(DETAILS_FILE)
+                if details_payload is not None:
+                    if len(details_payload) > MAX_DETAILS_SOURCE_BYTES:
+                        raise CatalogError(
+                            f"{full_name} asset {asset_name!r} DETAILS.md is too large"
+                        )
+                    try:
+                        entry["_details_markdown"] = details_payload.decode("utf-8")
+                    except UnicodeDecodeError as exc:
+                        raise CatalogError(
+                            f"{full_name} asset {asset_name!r} DETAILS.md is not valid UTF-8"
+                        ) from exc
+            plugins.append(entry)
 
     plugins.sort(key=lambda item: (item["title"].casefold(), item["name"]))
     return plugins
@@ -976,7 +1123,7 @@ def build_entry(
     description = manifest.get("description") if isinstance(manifest.get("description"), str) else (repo.get("description") or "")
     author = manifest.get("author") if isinstance(manifest.get("author"), str) else repo.get("owner", {}).get("login", "")
 
-    return {
+    entry = {
         "name": plugin_id,
         "title": title,
         "description": description,
@@ -989,6 +1136,14 @@ def build_entry(
         "base": f"https://raw.githubusercontent.com/{full_name}/{urllib.parse.quote(tag, safe='')}/{base_suffix}",
         "files": files,
     }
+    if DETAILS_FILE in files and DETAILS_FILE in root_names:
+        details_path = (
+            f"{manifest_path.rsplit('/', 1)[0]}/{DETAILS_FILE}"
+            if "/" in manifest_path
+            else DETAILS_FILE
+        )
+        entry["_details_markdown"] = client.text_file(full_name, tag, details_path)
+    return entry
 
 
 def discover_plugins(
@@ -1199,12 +1354,19 @@ def main() -> int:
             [*official_plugins, *community_plugins],
             key=lambda item: (item["title"].casefold(), item["name"]),
         )
+        details_changed = publish_details_assets(
+            plugins,
+            Path(DETAILS_OUTPUT_DIR),
+            args.catalog_repository,
+            args.catalog_ref,
+        )
     except CatalogError as exc:
         print(f"catalog build failed: {exc}", file=sys.stderr)
         return 1
 
     official_path = Path(args.official_output)
     changes = {
+        "details": details_changed,
         "compatibility": write_catalog(Path(args.output), plugins, "Plugin Hub"),
         "official": write_catalog(official_path, official_plugins, "Official Plugins"),
     }
