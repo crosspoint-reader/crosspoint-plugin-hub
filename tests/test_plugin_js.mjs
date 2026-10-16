@@ -8,6 +8,8 @@ const LEGACY_CATALOG =
   'https://raw.githubusercontent.com/jadehawk/PluginHub.crosspoint-plugin/main/catalog.json';
 const COMMUNITY_CATALOG =
   'https://raw.githubusercontent.com/jadehawk/PluginHub.crosspoint-plugin/main/community-catalog.json';
+const RETIRED_OFFICIAL_CATALOG =
+  'https://raw.githubusercontent.com/jadehawk/PluginHub.crosspoint-plugin/main/official-catalog.json';
 const LIST_INDEX =
   'https://raw.githubusercontent.com/jadehawk/PluginHub.crosspoint-plugin/main/catalog-lists.json';
 const PRIVATE_CATALOG = 'https://example.test/private/catalog.json';
@@ -317,6 +319,7 @@ test('browser hub adopts api.dir while migrating legacy config', async () => {
           text: JSON.stringify({
             catalogs: [
               LEGACY_CATALOG,
+              RETIRED_OFFICIAL_CATALOG,
               COMMUNITY_CATALOG,
               PRIVATE_CATALOG,
             ],
