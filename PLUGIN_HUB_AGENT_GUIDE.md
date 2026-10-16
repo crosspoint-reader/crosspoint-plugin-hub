@@ -62,11 +62,8 @@ Agent rules:
 
 1. Preserve a complete baseline path using fields current CrossPoint understands.
 2. Add optional enhanced fields beside the baseline so newer/capability-aware firmware can provide richer behavior without requiring a separate plugin fork.
-3. For catalog plugins, prefer the tested pattern of shipping all three when applicable:
-   - `browse.url` as a valid baseline/fallback catalog request;
-   - embedded `browse.lists` as the basic-firmware navigation snapshot;
-   - `browse.lists_url` as the preferred dynamic list index for capable firmware.
-4. If generated catalogs are used, generate the embedded static list snapshot and the remote dynamic list index from the same source data.
+3. For catalog plugins targeting the current contract, keep `browse.url` as a complete baseline and add `browse.lists_url` only when dynamic named lists are needed. Do not ship embedded `browse.lists` beside `browse.lists_url` expecting remote-first behavior: current firmware treats embedded lists as authoritative.
+4. If `browse.lists_url` is used, keep the `browse.url` catalog fully usable for firmware that ignores the newer field. Do not assume the native list-index path automatically falls back if the remote index fails.
 5. Use `compatibility.requires` only for a **hard dependency** that makes the plugin unusable when absent. Do not require a capability merely because it improves presentation.
 6. Prefer generic firmware capabilities and plugin API levels over exact firmware-ID checks. Do not special-case Razor-Crest when a named capability can express the requirement.
 7. Treat unknown enhanced fields as optional progressive enhancements unless the firmware contract explicitly requires otherwise.
@@ -106,7 +103,7 @@ Before declaring the repository Plugin Hub-ready, verify all of the following:
 - [ ] existing tests pass after the move;
 - [ ] a new or materially revised plugin has been checked for a usable basic-CrossPoint fallback;
 - [ ] optional enhanced behavior does not incorrectly appear in `compatibility.requires`;
-- [ ] catalog plugins that can be dual-mode use static `browse.lists` plus dynamic `browse.lists_url` when appropriate.
+- [ ] catalog plugins that can be dual-mode keep a complete `browse.url` baseline and add `browse.lists_url` only when dynamic named-list navigation is needed; do not combine it with embedded `browse.lists` expecting remote-first behavior.
 
 ## Plugin Hub repository exception
 

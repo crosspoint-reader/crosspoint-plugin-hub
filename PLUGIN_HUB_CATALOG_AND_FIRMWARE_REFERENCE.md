@@ -11,9 +11,9 @@ Production remains:
 - `stable` branch: Plugin Hub 0.1.5
 - latest stable GitHub Release: `v0.1.5`
 - firmware Settings -> Install Plugin Hub: downloads from `stable`, so normal users continue to receive 0.1.5
-- Plugin Hub's own Official catalog entry: resolves from the latest stable GitHub Release, so it continues to advertise 0.1.5 until `v0.1.6` is published
+- Plugin Hub's own Community catalog entry: resolves from the latest stable GitHub Release, so it continues to advertise 0.1.5 until `v0.1.6` is published
 
-Why the gate exists: 0.1.6 replaces the old static native Official/Community list definition with `browse.lists_url`. Older plugin-enabled firmware does not understand `lists_url`, so the native Plugin Hub catalog picker requires the firmware changes described below. The browser WebUI can fetch the dynamic list index itself, but native on-device browsing is the release blocker.
+Why the gate exists: 0.1.6 adds dynamic named-list navigation through `browse.lists_url`, notices, compatibility filtering, rich item details, and the hardened generic bundle/update behavior described below. Older plugin-enabled firmware can still use the backward-compatible `browse.url` union catalog, but it cannot provide the complete 0.1.6 native experience. The supporting firmware is therefore the release gate.
 
 After the firmware change is merged/released, publish `v0.1.6`. The stable-promotion workflow can then move `stable` to 0.1.6, the catalog refresh will advertise 0.1.6, and existing 0.1.5 users can update Plugin Hub through the normal plugin bundle updater.
 
@@ -122,7 +122,7 @@ Curated-catalog-backed example:
 
 If an Official plugin ID is also claimed by an untrusted source, the trusted policy source wins. Duplicate Community IDs fail the catalog refresh instead of silently selecting a winner.
 
-Plugin Hub itself is intentionally Official. Once a future stable Plugin Hub Release is newer than the installed copy, the normal catalog updater can update Plugin Hub in place.
+Plugin Hub itself currently follows the same Community policy as other published plugins. Once a future stable Plugin Hub Release is newer than the installed copy, the normal catalog updater can update Plugin Hub in place.
 
 ## Generated catalogs
 
@@ -158,17 +158,13 @@ If a future single first-letter bucket itself exceeds 1 MiB, the current generat
 
 `catalog-lists.json` is the indirection that allows the catalog layout to change without changing `device.json` or releasing Plugin Hub again.
 
-Normal shape:
+Normal current shape:
 
 ```json
 {
   "schema_version": 1,
   "generated_at": "...",
   "lists": [
-    {
-      "title": "Official Plugins",
-      "url": "https://raw.githubusercontent.com/jadehawk/PluginHub.crosspoint-plugin/main/official-catalog.json"
-    },
     {
       "title": "Community Plugins",
       "url": "https://raw.githubusercontent.com/jadehawk/PluginHub.crosspoint-plugin/main/community-catalog.json",
@@ -182,6 +178,10 @@ Normal shape:
   ]
 }
 ```
+
+When the Official policy is empty, the Official catalog is not advertised in this
+index. If Official entries are added again later, the generator can prepend an
+Official list entry without requiring a firmware change.
 
 When Community is split, the same index simply contains multiple Community entries with range labels. No Plugin Hub release is needed merely because the Action changed the number of shards.
 
@@ -206,7 +206,7 @@ The current PR branch advertises exactly these capability names:
 
 | Capability | Generic firmware behavior | How Plugin Hub 0.1.6 uses it | Other-plugin use |
 |---|---|---|---|
-| `catalog.lists` | Named catalog views plus optional remote `browse.lists_url` discovery. | Loads the live Official/Community list index so the number and names of Community shards can change without a Plugin Hub release. | Any plugin can publish dynamic shelves, categories, feeds, devices, packs, or other named catalog views. |
+| `catalog.lists` | Named catalog views plus optional remote `browse.lists_url` discovery. | Loads the live list index so the number and names of Community shards or future catalog groups can change without a Plugin Hub release. | Any plugin can publish dynamic shelves, categories, feeds, devices, packs, or other named catalog views. |
 | `catalog.notices` | Optional per-list confirmation notice with custom title, message, Confirm, and Cancel labels. | Displays the Community-plugin warning before entering Community catalogs. | Any plugin can place a generic warning, terms notice, destructive-action warning, or other confirmation in front of a named catalog. |
 | `catalog.bundle_install` | Multi-file bundle installation from a catalog row using a base URL, file list, and destination subdirectory. | Installs complete plugins rather than a single file. | Any catalog can distribute supported multi-file plugin bundles without a service-specific installer in firmware. |
 | `catalog.version_tracking` | Compares a catalog item's version with the installed plugin `manifest.json` and exposes Installed/Update state without offering downgrades. | Detects when an installed plugin, including Plugin Hub itself, has a newer published version. | Any plugin catalog can provide generic install/update state. |
@@ -228,7 +228,7 @@ Not every useful addition needs a separate capability string. The current PR als
 - request-template variables `{firmware_family}`, `{firmware_id}`, `{firmware_version}`, `{plugin_api}`, and `{plugin_capabilities}` so remote services can adapt without hard-coding one firmware fork;
 - rescanning installed plugins and refreshing plugin event subscriptions after bundle installation/update so newly installed code becomes usable without a reboot.
 
-Plugin Hub `0.1.6` directly exercises the dynamic-list, notice, bundle-install, version-tracking, and compatibility portions of this contract. It should **not** be interpreted as the only plugin allowed to use them.
+Plugin Hub `0.1.6` directly exercises the dynamic-list, notice, bundle-install, version-tracking, compatibility, and item-details portions of this contract. It should **not** be interpreted as the only plugin allowed to use them.
 
 ### Razor-Crest extensions that are not part of the current upstream PR
 
@@ -251,7 +251,7 @@ For stock CrossPoint builds implementing the **current PR**, the generic identit
 firmware_family = crosspoint
 firmware_id = crosspoint
 plugin_api = 1
-plugin_capabilities = catalog.lists,catalog.notices,catalog.bundle_install,catalog.version_tracking,catalog.compatibility
+plugin_capabilities = catalog.lists,catalog.notices,catalog.bundle_install,catalog.version_tracking,catalog.compatibility,catalog.item_details
 ```
 
 Razor-Crest keeps the `crosspoint` family, uses its own firmware ID, and currently extends the advertised capability list with `catalog.images` and `catalog.cache`. Plugins should prefer family/API/capability requirements and use an exact firmware ID only when they genuinely depend on implementation-specific behavior.
@@ -296,9 +296,9 @@ When present, firmware:
 
 This allows Plugin Hub's GitHub Action to add/remove Community shards dynamically without changing or releasing the plugin.
 
-Plugin Hub 0.1.6 intentionally uses `lists_url` without a static `browse.lists` fallback because this feature has not yet been released; 0.1.6 is being held until supporting firmware exists.
+Plugin Hub 0.1.6 intentionally uses `lists_url` without static `browse.lists` so firmware implementing the current contract actually fetches the dynamic list index. It retains the backward-compatible `browse.url` (`catalog.json`) union as the baseline for firmware that does not understand `lists_url`.
 
-That is a transitional Plugin Hub-specific choice, not the recommended template for new general-purpose plugins. A plugin that should work on both current/basic CrossPoint and capability-aware firmware should normally ship both `browse.lists` and `browse.lists_url`: basic firmware uses the embedded list snapshot, while capable firmware prefers the remote index and can fall back to the embedded lists if the remote index is unavailable. See `PLUGIN_REPOSITORY_STANDARD.md` and `jadehawk/wallpapers.crosspoint-plugin` for the physically tested dual-mode reference implementation.
+Do **not** ship both `browse.lists` and `browse.lists_url` expecting remote-first behavior with the current implementation: embedded lists are authoritative, and `lists_url` is loaded only when `browse.lists` is absent. If the remote list index fails, native browsing fails cleanly rather than automatically falling back. See `PLUGIN_REPOSITORY_STANDARD.md` for the exact dual-mode pattern used by Plugin Hub 0.1.6.
 
 ### 3. Generic per-list notices
 
@@ -386,7 +386,7 @@ From the repository root:
 python tools/generate_stress_test_catalogs.py
 ```
 
-The generator should be treated as test tooling. It writes its test index to `stress/catalog-lists.json`; production `catalog-lists.json` must point only to the normal Official/Community generated catalogs on `main`. The committed stress index can be used by a temporary test build without touching the production index.
+The generator should be treated as test tooling. It writes its test index to `stress/catalog-lists.json`; production `catalog-lists.json` must point only to the normal generated catalogs on `main`. The committed stress index can be used by a temporary test build without touching the production index.
 
 The exact byte sizes above describe the committed fixtures that were physically tested. Regenerating later may change sizes slightly if the real catalog entries used as templates have changed, but the same production partitioner and 1 MiB limit are used.
 
@@ -394,15 +394,15 @@ The exact byte sizes above describe the committed fixtures that were physically 
 
 Before publishing `v0.1.6`:
 
-1. Merge/release the CrossPoint firmware support for `browse.lists_url` and per-list notices.
-2. Confirm the target firmware can open Official and Community from the production `catalog-lists.json`.
+1. Confirm the approved CrossPoint firmware support for the 0.1.6 capability set is merged and available to users.
+2. Confirm the target firmware can open the production Community catalog from `catalog-lists.json`.
 3. Confirm `stable` still points to 0.1.5 until the actual 0.1.6 release is intentionally published.
 4. Confirm `device.json` and generated catalog URLs use `main`, not a temporary test branch.
 5. Run Python catalog tests and browser plugin tests.
 6. Run the 2K/4K/6K stress generator when catalog/partition logic changes materially.
 7. Publish stable GitHub Release `v0.1.6`.
 8. Let the stable-promotion workflow advance `stable` to the release.
-9. Confirm the next catalog refresh publishes Plugin Hub 0.1.6 in Official Plugins and offers an update to installed 0.1.5 copies.
+9. Confirm the next catalog refresh publishes Plugin Hub 0.1.6 in Community Plugins and offers an update to installed 0.1.5 copies.
 
 ## Firmware compatibility filtering
 

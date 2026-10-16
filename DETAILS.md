@@ -4,7 +4,7 @@ Discover, install, and update plugins from the reader without manually copying p
 
 ## Features
 
-- Browse separate Official and Community plugin catalogs.
+- Browse the Community plugin catalog and any future dynamic catalog lists.
 - Install complete multi-file plugin bundles from catalog entries.
 - Detect installed versions and show available updates without offering downgrades.
 - Follow dynamic catalog lists so catalog organization can change without a Plugin Hub release.
@@ -17,4 +17,4 @@ Discover, install, and update plugins from the reader without manually copying p
 
 ## Notes
 
-Official plugins are explicitly classified by Plugin Hub policy. Community plugins are discovered from eligible third-party repositories and are not vetted by the firmware development team. Plugin Hub uses generic firmware plugin-system capabilities that are available to other plugins as well.
+All currently published plugins appear in Community Plugins and are not vetted by the firmware development team. Official classification remains available as a future maintainer policy, but no Official catalog is currently advertised. Plugin Hub uses generic firmware plugin-system capabilities that are available to other plugins as well.

@@ -151,16 +151,18 @@ def raw_catalog_url(repository: str, ref: str, filename: str) -> str:
 def list_index_entries(
     repository: str,
     ref: str,
-    official_filename: str,
+    official_filename: str | None,
     community_filename: str,
     partitions: list[CommunityPartition],
 ) -> list[dict[str, Any]]:
-    entries: list[dict[str, Any]] = [
-        {
-            "title": "Official Plugins",
-            "url": raw_catalog_url(repository, ref, official_filename),
-        }
-    ]
+    entries: list[dict[str, Any]] = []
+    if official_filename:
+        entries.append(
+            {
+                "title": "Official Plugins",
+                "url": raw_catalog_url(repository, ref, official_filename),
+            }
+        )
     for partition in partitions:
         entries.append(
             {

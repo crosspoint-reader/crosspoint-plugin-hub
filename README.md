@@ -4,23 +4,25 @@ Plugin Hub is a CrossPoint SD-card plugin that discovers, installs, and updates
 plugins without requiring the CrossPoint firmware repository to host or maintain
 the catalog.
 
-Plugin Hub publishes two user-facing catalogs: **Official Plugins** for explicitly
-curated CrossPoint ecosystem plugins and **Community Plugins** for valid third-party
-plugins discovered from community developers. GitHub Actions does the heavier
-discovery and classification work off-device.
+Plugin Hub currently publishes one user-facing **Community Plugins** catalog. All
+valid discovered plugins, including the plugins previously classified as Official,
+are published there. The Official classification machinery remains available for a
+future policy change, but no Official catalog is advertised while the Official policy
+is empty.
 
-For backward compatibility, `catalog.json` remains a generated union of both
-catalogs. New Plugin Hub interfaces use a generated `catalog-lists.json` index so
+For backward compatibility, `catalog.json` remains a generated union of all published
+plugins. New Plugin Hub interfaces use a generated `catalog-lists.json` index so
 Community can remain one catalog while small, or automatically become multiple
 alphabetical shards when its compact serialized size approaches the firmware limit.
-The compatibility union is not exposed as a third browsing choice.
+The compatibility union is not exposed as a separate browsing choice.
 
 > [!NOTE]
-> **0.1.6 is intentionally staged on `main` but not yet released.** Production
-> `stable` and the latest stable GitHub Release remain 0.1.5 until the supporting
-> CrossPoint firmware changes for `browse.lists_url` and per-list notices are
-> merged/released. This keeps existing plugin-enabled firmware on the compatible
-> 0.1.5 release while 0.1.6 remains ready for the firmware rollout.
+> **0.1.6 is staged on `main` and release-gated on the supporting firmware.**
+> Production `stable` and the latest stable GitHub Release remain 0.1.5 until
+> that firmware lands. The 0.1.6 package remains dual-mode: firmware that does
+> not understand `browse.lists_url` continues through the baseline `browse.url`
+> (`catalog.json` union), while capable firmware uses the dynamic
+> Community-focused `catalog-lists.json` index.
 
 For maintainer details on whitelist/blacklist behavior, dynamic catalog generation,
 firmware requirements, and the 2K/4K/6K torture test, see
@@ -153,24 +155,30 @@ manual allowlist entry.
    of discovery, whitelist, release-asset, curated-catalog, or Official status.
 4. The catalog builder validates versions and install files, then applies
    `catalog-policy.json`.
-5. IDs explicitly listed in the policy are published in **Official Plugins** only
-   when they resolve to their declared trusted source. All other valid discovered
-   plugins are published in **Community Plugins**.
+5. With the current empty Official policy, every valid discovered plugin is
+   published in **Community Plugins**. If Official entries are added to
+   `catalog-policy.json` later, only those explicitly trusted IDs move into the
+   Official catalog.
 6. The builder writes compact machine JSON. Community stays in one file while it
    fits under the native response limit, then automatically splits into the minimum
    number of balanced contiguous alphabetical shards that fit.
-7. The builder writes `catalog-lists.json`, which points at Official plus whatever
-   Community shard layout currently exists and attaches the third-party warning to
-   every Community entry.
-8. Plugin Hub's `device.json` uses `browse.lists_url` to load that live index, so
-   shard-count changes do not require a Plugin Hub release.
-9. CrossPoint installs each selected bundle under
-   `/.crosspoint/plugins/<plugin-id>/`.
+7. The builder writes `catalog-lists.json`, which currently points only at the
+   Community shard layout and attaches the third-party warning to every Community
+   entry. An Official entry is added automatically only when the Official set is
+   non-empty.
+8. Plugin Hub's `device.json` keeps `browse.url` as the baseline union catalog and
+   uses `browse.lists_url` as the capability-aware dynamic index, so shard-count
+   changes do not require a Plugin Hub release.
+
+9. New installs use `/.crosspoint/plugins/<plugin-id>/`. Updates and reinstalls
+   preserve an already-installed plugin's supported root (`/.crosspoint/plugins`,
+   `/plugins`, or `/.plugins`).
 
 Plugin Hub uses both CrossPoint plugin surfaces: `device.json` provides the
-on-reader Official/Community chooser, while `plugin.js` provides the browser-side
-management UI. Installation and updating still use CrossPoint's existing
-declarative bundle installer.
+native catalog experience, with the union `browse.url` remaining usable when
+newer fields are ignored, while `plugin.js` provides the browser-side management
+UI. The WebUI scans all supported plugin roots and preserves the existing
+installation root for update/reinstall/remove operations.
 
 ## Detailed requirements for the recommended no-PR path
 
@@ -550,17 +558,17 @@ Open:
 Settings → System → Plugins → Plugin Hub
 ```
 
-The reader uses the firmware's existing `browse.lists` support and first presents
-two choices:
+The reader follows the generated `catalog-lists.json` index. With the current
+policy it presents only:
 
 ```text
-Official Plugins
 Community Plugins
 ```
 
-Selecting either entry opens the normal plugin list for that catalog. Back from a
-plugin list returns to the Official/Community chooser. No firmware-specific Plugin
-Hub code is required for this split.
+Selecting it opens the normal plugin list. If Community later needs multiple shards,
+the same screen shows those generated Community ranges automatically. If an Official
+policy is introduced later, the generator can add an Official entry without a
+firmware change.
 
 ### From the device web UI
 
@@ -575,15 +583,15 @@ plugin-management actions as before:
 - remove an installed plugin;
 - show installed/catalog versions and update counts.
 
-The browser card shows **Official Plugins** and **Community Plugins** as two
-non-removable built-in browse choices. Official is selected when Plugin Hub opens,
-and only the selected catalog is loaded at a time. The compatibility `catalog.json`
-feed is not shown as another choice.
+The browser card currently shows **Community Plugins** as the built-in browse
+choice. The generated list index remains authoritative, so future Community shards or
+a future Official catalog can be exposed without changing the plugin package. The
+compatibility `catalog.json` feed is not shown as another choice.
 
 #### Add custom, test, or private catalogs
 
 Expand **Custom catalogs** to add another catalog URL. Custom catalogs remain
-separate from the two built-ins and can be selected with **Browse**.
+separate from the built-in Community catalog and can be selected with **Browse**.
 
 On firmware that provides the newer plugin-directory API, Plugin Hub stores its
 configuration inside its actual plugin directory as `config.json`. This keeps the
@@ -607,7 +615,7 @@ for self-version detection, with the legacy `/.crosspoint/plugins/pluginhub`
 lookup retained as a fallback.
 
 A custom catalog becomes another secondary browser choice; it is not merged into
-Official or Community. A custom catalog can be hosted on GitHub Raw, a LAN server,
+the built-in Community catalog. A custom catalog can be hosted on GitHub Raw, a LAN server,
 a private/test web server, or another HTTP(S) endpoint that the device can fetch.
 
 A minimal custom catalog is:
@@ -641,7 +649,7 @@ device can fetch directly, such as a signed URL or a reachable authenticated
 endpoint that does not require interactive browser login.
 
 Custom catalogs are currently a **browser-side Plugin Hub feature**. The on-reader
-Plugin Hub screen exposes only the built-in Official and Community catalogs defined
+Plugin Hub screen follows the built-in dynamic catalog list defined
 in `device.json`.
 
 ## Trust model

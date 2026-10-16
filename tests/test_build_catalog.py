@@ -90,6 +90,30 @@ class CatalogBuilderTests(unittest.TestCase):
         self.assertIsNone(build_catalog.normalize_version("1.2.3.4.5"))
         self.assertIsNone(build_catalog.normalize_version("v1.2.3-beta"))
 
+    def test_compatibility_normalizes_strings_arrays_and_api_minimum(self):
+        self.assertEqual(
+            build_catalog.normalize_compatibility(
+                {
+                    "firmware_family": ["crosspoint", "crosspoint"],
+                    "firmware": "crosspoint,razor-crest",
+                    "plugin_api_min": "2",
+                    "requires": ["catalog.item_details", "catalog.compatibility"],
+                }
+            ),
+            {
+                "firmware_family": "crosspoint",
+                "firmware": "crosspoint,razor-crest",
+                "plugin_api_min": 2,
+                "requires": "catalog.item_details,catalog.compatibility",
+            },
+        )
+        self.assertIsNone(build_catalog.normalize_compatibility(None))
+        self.assertIsNone(build_catalog.normalize_compatibility({}))
+        with self.assertRaises(build_catalog.CatalogError):
+            build_catalog.normalize_compatibility({"firmware_family": ["crosspoint", 3]})
+        with self.assertRaises(build_catalog.CatalogError):
+            build_catalog.normalize_compatibility({"plugin_api_min": -1})
+
     def test_plugin_id_prefers_valid_manifest_name(self):
         manifest = {"name": "send2ereader"}
         self.assertEqual(
@@ -154,6 +178,11 @@ class CatalogBuilderTests(unittest.TestCase):
                 "description": "Send books to CrossPoint.",
                 "author": "Jadehawk",
                 "version": "0.1.2",
+                "compatibility": {
+                    "firmware_family": ["crosspoint"],
+                    "plugin_api_min": 1,
+                    "requires": "catalog.bundle_install,catalog.item_details",
+                },
                 "files": ["manifest.json", "device.json", "plugin.js", "README.md"],
             },
             root=[{"name": "send2ereader.crosspoint-plugin", "type": "dir"}],
@@ -187,6 +216,14 @@ class CatalogBuilderTests(unittest.TestCase):
             "https://raw.githubusercontent.com/jadehawk/send2ereader.crosspoint-plugin/v0.1.2/send2ereader.crosspoint-plugin/",
         )
         self.assertEqual(entry["files"], client.manifest["files"])
+        self.assertEqual(
+            entry["compatibility"],
+            {
+                "firmware_family": "crosspoint",
+                "plugin_api_min": 1,
+                "requires": "catalog.bundle_install,catalog.item_details",
+            },
+        )
 
     def test_build_entry_reads_declared_details_markdown_from_release(self):
         client = FakeClient(
@@ -397,6 +434,10 @@ class CatalogBuilderTests(unittest.TestCase):
                             "description": "Browse books.",
                             "author": "Diirge",
                             "version": "1.2.0",
+                            "compatibility": {
+                                "firmware_family": "crosspoint",
+                                "requires": ["catalog.bundle_install", "catalog.compatibility"],
+                            },
                             "base": "https://raw.githubusercontent.com/itsthisjustin/sd-plugins/main/bookfusion/",
                             "files": [
                                 "manifest.json",
@@ -440,6 +481,13 @@ class CatalogBuilderTests(unittest.TestCase):
             f"https://raw.githubusercontent.com/itsthisjustin/sd-plugins/{'b' * 40}/bookfusion/",
         )
         self.assertEqual(plugins[0]["source_catalog"], "https://example.test/catalog.json")
+        self.assertEqual(
+            plugins[0]["compatibility"],
+            {
+                "firmware_family": "crosspoint",
+                "requires": "catalog.bundle_install,catalog.compatibility",
+            },
+        )
 
     def test_policy_requires_one_explicit_trusted_source_per_official_plugin(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -649,6 +697,10 @@ class CatalogBuilderTests(unittest.TestCase):
             "description": "Readest for CrossPoint.",
             "author": "Readest",
             "version": "0.12.10",
+            "compatibility": {
+                "firmware": ["crosspoint", "razor-crest"],
+                "plugin_api_min": 1,
+            },
             "files": ["manifest.json", "device.json", "plugin.js", "README.md"],
         }
         payload = plugin_zip(manifest, prefix="readest/")
@@ -694,6 +746,10 @@ class CatalogBuilderTests(unittest.TestCase):
         self.assertEqual(
             plugins[0]["base"],
             "https://raw.githubusercontent.com/jadehawk/PluginHub.crosspoint-plugin/main/release-assets/readest/0.12.10/",
+        )
+        self.assertEqual(
+            plugins[0]["compatibility"],
+            {"firmware": "crosspoint,razor-crest", "plugin_api_min": 1},
         )
 
     def test_release_asset_repository_processes_multiple_matching_zips(self):
@@ -1002,6 +1058,25 @@ class CatalogBuilderTests(unittest.TestCase):
             self.assertEqual(entry["notice"]["message"], "Third-party plugins. Not vetted by Dev Team.")
             self.assertEqual(entry["notice"]["confirm"], "Continue")
             self.assertEqual(entry["notice"]["cancel"], "Go Back")
+
+    def test_dynamic_list_index_omits_official_when_not_configured(self):
+        plugins = self._synthetic_community_plugins()
+        partitions = build_catalog.partition_community_plugins(
+            plugins,
+            build_catalog.rendered_catalog_size(plugins, "Community Plugins"),
+        )
+        entries = build_catalog.list_index_entries(
+            "jadehawk/PluginHub.crosspoint-plugin",
+            "main",
+            None,
+            "community-catalog.json",
+            partitions,
+        )
+
+        self.assertTrue(entries)
+        self.assertTrue(all(entry["title"].startswith("Community Plugins") for entry in entries))
+        self.assertFalse(any(entry["title"] == "Official Plugins" for entry in entries))
+
 
     def test_write_community_catalogs_removes_stale_partition_files(self):
         plugins = self._synthetic_community_plugins()

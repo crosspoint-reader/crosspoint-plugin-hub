@@ -7,7 +7,8 @@ CrossPoint.registerPlugin(async (container, api) => {
       ? api.dir.replace(/\/+$/, '')
       : null;
   const CONFIG_PATH = PLUGIN_DIR ? PLUGIN_DIR + '/config.json' : LEGACY_CONFIG_PATH;
-  const PLUGINS_DIR = '/.crosspoint/plugins';
+  const PLUGIN_ROOTS = ['/.crosspoint/plugins', '/plugins', '/.plugins'];
+  const PLUGINS_DIR = PLUGIN_ROOTS[0];
   const RELEASE_API_URL = 'https://api.github.com/repos/jadehawk/PluginHub.crosspoint-plugin/releases/latest';
   const LEGACY_CATALOG =
     'https://raw.githubusercontent.com/jadehawk/PluginHub.crosspoint-plugin/main/catalog.json';
@@ -17,7 +18,18 @@ CrossPoint.registerPlugin(async (container, api) => {
     'https://raw.githubusercontent.com/jadehawk/PluginHub.crosspoint-plugin/main/community-catalog.json';
   const LIST_INDEX_URL =
     'https://raw.githubusercontent.com/jadehawk/PluginHub.crosspoint-plugin/main/catalog-lists.json';
-  let BUILT_IN_CATALOGS = [];
+
+  function defaultBuiltInCatalogs() {
+    return [
+      {
+        title: 'Community Plugins',
+        description: 'Third-party plugins from CrossPoint community developers.',
+        url: COMMUNITY_CATALOG
+      }
+    ];
+  }
+
+  let BUILT_IN_CATALOGS = defaultBuiltInCatalogs();
 
   let selectedCatalog = "";
   let extraCatalogs = [];
@@ -129,21 +141,24 @@ CrossPoint.registerPlugin(async (container, api) => {
     );
   }
 
-  async function installedNames() {
-    try {
-      const response = await fetch('/api/files?path=' + encodeURIComponent(PLUGINS_DIR));
-      if (!response.ok) return new Set();
-      const entries = await response.json();
-      return new Set(
-        entries.filter((entry) => entry.isDirectory).map((entry) => entry.name)
-      );
-    } catch (e) {
-      return new Set();
+  async function installedPlugins() {
+    const installed = new Map();
+    for (const root of PLUGIN_ROOTS) {
+      try {
+        const response = await fetch('/api/files?path=' + encodeURIComponent(root));
+        if (!response.ok) continue;
+        const entries = await response.json();
+        for (const entry of entries || []) {
+          if (!entry || !entry.isDirectory || !entry.name || installed.has(entry.name)) continue;
+          installed.set(entry.name, root + '/' + entry.name);
+        }
+      } catch (e) {}
     }
+    return installed;
   }
 
-  async function installedVersion(name) {
-    const manifest = await readJsonFile(PLUGINS_DIR + '/' + name + '/manifest.json');
+  async function installedVersion(dir) {
+    const manifest = await readJsonFile(dir + '/manifest.json');
     return manifest && manifest.version ? manifest.version : null;
   }
 
@@ -152,7 +167,9 @@ CrossPoint.registerPlugin(async (container, api) => {
       const manifest = await readJsonFile(PLUGIN_DIR + '/manifest.json');
       if (manifest && manifest.version) return manifest.version;
     }
-    return installedVersion('pluginhub');
+    const installed = await installedPlugins();
+    const dir = installed.get('pluginhub');
+    return dir ? installedVersion(dir) : null;
   }
 
   function numericVersion(version) {
@@ -323,9 +340,9 @@ CrossPoint.registerPlugin(async (container, api) => {
     return rel;
   }
 
-  async function installPlugin(plugin, onProgress) {
+  async function installPlugin(plugin, onProgress, installedDir = null) {
     validatePlugin(plugin);
-    const dir = PLUGINS_DIR + '/' + plugin.name;
+    const dir = installedDir || PLUGINS_DIR + '/' + plugin.name;
     await mkdir(dir);
 
     const base = String(plugin.base).replace(/\/*$/, '/');
@@ -353,9 +370,9 @@ CrossPoint.registerPlugin(async (container, api) => {
     if (onProgress) onProgress(files.length, files.length);
   }
 
-  async function uninstallPlugin(plugin) {
+  async function uninstallPlugin(plugin, installedDir = null) {
     validatePlugin(plugin);
-    const dir = PLUGINS_DIR + '/' + plugin.name;
+    const dir = installedDir || PLUGINS_DIR + '/' + plugin.name;
 
     for (const file of plugin.files) {
       let rel;
@@ -480,8 +497,9 @@ CrossPoint.registerPlugin(async (container, api) => {
   };
 
   function pluginCard(plugin, installed) {
-    const isInstalled = installed.has(plugin.name);
-    const localVersion = isInstalled ? installed.get(plugin.name) : null;
+    const installedState = installed.get(plugin.name) || null;
+    const isInstalled = installedState !== null;
+    const localVersion = installedState ? installedState.version : null;
     const updateAvailable =
       isInstalled && hasUpdate(localVersion, plugin.version);
 
@@ -542,7 +560,7 @@ CrossPoint.registerPlugin(async (container, api) => {
       try {
         await installPlugin(plugin, (done, total) => {
           install.textContent = verb + '… ' + done + '/' + total;
-        });
+        }, installedState ? installedState.dir : null);
         status(
           (updateAvailable ? 'Updated ' : 'Installed ') +
           (plugin.title || plugin.name) +
@@ -567,7 +585,7 @@ CrossPoint.registerPlugin(async (container, api) => {
         status('Removing ' + (plugin.title || plugin.name) + '…');
 
         try {
-          await uninstallPlugin(plugin);
+          await uninstallPlugin(plugin, installedState ? installedState.dir : null);
           status('Removed ' + (plugin.title || plugin.name) + '.');
           await refresh();
         } catch (e) {
@@ -600,10 +618,10 @@ CrossPoint.registerPlugin(async (container, api) => {
       return;
     }
 
-    const names = await installedNames();
+    const locations = await installedPlugins();
     const installed = new Map();
-    for (const name of names) {
-      installed.set(name, await installedVersion(name));
+    for (const [name, dir] of locations) {
+      installed.set(name, { dir, version: await installedVersion(dir) });
     }
 
     const catalogName = catalog.name || selectedCatalogLabel();
@@ -620,7 +638,7 @@ CrossPoint.registerPlugin(async (container, api) => {
     for (const plugin of plugins) {
       if (
         installed.has(plugin.name) &&
-        hasUpdate(installed.get(plugin.name), plugin.version)
+        hasUpdate(installed.get(plugin.name).version, plugin.version)
       ) {
         updates += 1;
       }
@@ -647,9 +665,9 @@ CrossPoint.registerPlugin(async (container, api) => {
   try {
     await loadBuiltInCatalogs();
   } catch (e) {
-    status('Error loading catalog index: ' + e.message);
-    renderCatalogs();
-    return;
+    BUILT_IN_CATALOGS = defaultBuiltInCatalogs();
+    selectedCatalog = BUILT_IN_CATALOGS[0].url;
+    status('Catalog index unavailable; using built-in catalog URLs.');
   }
 
   const config = await loadConfig();

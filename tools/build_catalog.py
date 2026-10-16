@@ -261,6 +261,55 @@ def normalize_version(tag: str) -> str | None:
     return match.group(1) if match else None
 
 
+def normalize_compatibility_csv_field(value: Any, field: str) -> str | None:
+    if value is None:
+        return None
+    raw_values = [value] if isinstance(value, str) else value
+    if not isinstance(raw_values, list) or not all(isinstance(item, str) for item in raw_values):
+        raise CatalogError(f"compatibility.{field} must be a string or string array")
+
+    tokens: list[str] = []
+    seen: set[str] = set()
+    for raw in raw_values:
+        for part in raw.split(","):
+            token = part.strip()
+            if not token:
+                raise CatalogError(f"compatibility.{field} contains an empty value")
+            if token not in seen:
+                seen.add(token)
+                tokens.append(token)
+    return ",".join(tokens) if tokens else None
+
+
+def normalize_compatibility(value: Any) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise CatalogError("compatibility must be a JSON object")
+
+    normalized: dict[str, Any] = {}
+    for field in ("firmware_family", "firmware", "requires"):
+        tokens = normalize_compatibility_csv_field(value.get(field), field)
+        if tokens is not None:
+            normalized[field] = tokens
+
+    api_min = value.get("plugin_api_min")
+    if api_min is not None:
+        if isinstance(api_min, bool):
+            raise CatalogError("compatibility.plugin_api_min must be a non-negative integer")
+        if isinstance(api_min, int):
+            parsed_api = api_min
+        elif isinstance(api_min, str) and api_min.strip().isdigit():
+            parsed_api = int(api_min.strip())
+        else:
+            raise CatalogError("compatibility.plugin_api_min must be a non-negative integer")
+        if parsed_api < 0:
+            raise CatalogError("compatibility.plugin_api_min must be a non-negative integer")
+        normalized["plugin_api_min"] = parsed_api
+
+    return normalized or None
+
+
 def _details_inline(text: str) -> str:
     rendered = html.escape(text.strip(), quote=False)
     rendered = re.sub(r"`([^`]+)`", r"\1", rendered)
@@ -640,18 +689,20 @@ def curated_catalog_plugins(
             title = source_entry.get("title")
             description = source_entry.get("description")
             author = source_entry.get("author")
-            imported.append(
-                {
-                    "name": plugin_id,
-                    "title": title if isinstance(title, str) and title else plugin_id,
-                    "description": description if isinstance(description, str) else "",
-                    "author": author if isinstance(author, str) else "",
-                    "version": normalize_version(version_value),
-                    "source_catalog": url,
-                    "base": pin_raw_github_base(client, base),
-                    "files": files,
-                }
-            )
+            compatibility = normalize_compatibility(source_entry.get("compatibility"))
+            entry = {
+                "name": plugin_id,
+                "title": title if isinstance(title, str) and title else plugin_id,
+                "description": description if isinstance(description, str) else "",
+                "author": author if isinstance(author, str) else "",
+                "version": normalize_version(version_value),
+                "source_catalog": url,
+                "base": pin_raw_github_base(client, base),
+                "files": files,
+            }
+            if compatibility is not None:
+                entry["compatibility"] = compatibility
+            imported.append(entry)
             seen_ids.add(plugin_id)
 
     imported.sort(key=lambda item: (item["title"].casefold(), item["name"]))
@@ -913,6 +964,7 @@ def release_asset_plugins(
             title = manifest.get("title")
             description = manifest.get("description")
             author = manifest.get("author")
+            compatibility = normalize_compatibility(manifest.get("compatibility"))
             entry = {
                 "name": plugin_id,
                 "title": title if isinstance(title, str) and title else plugin_id,
@@ -938,6 +990,8 @@ def release_asset_plugins(
                 ),
                 "files": files,
             }
+            if compatibility is not None:
+                entry["compatibility"] = compatibility
             if DETAILS_FILE in files:
                 details_payload = payloads.get(DETAILS_FILE)
                 if details_payload is not None:
@@ -1122,6 +1176,7 @@ def build_entry(
     title = manifest.get("title") if isinstance(manifest.get("title"), str) else repo_name
     description = manifest.get("description") if isinstance(manifest.get("description"), str) else (repo.get("description") or "")
     author = manifest.get("author") if isinstance(manifest.get("author"), str) else repo.get("owner", {}).get("login", "")
+    compatibility = normalize_compatibility(manifest.get("compatibility"))
 
     entry = {
         "name": plugin_id,
@@ -1136,6 +1191,8 @@ def build_entry(
         "base": f"https://raw.githubusercontent.com/{full_name}/{urllib.parse.quote(tag, safe='')}/{base_suffix}",
         "files": files,
     }
+    if compatibility is not None:
+        entry["compatibility"] = compatibility
     if DETAILS_FILE in files and DETAILS_FILE in root_names:
         details_path = (
             f"{manifest_path.rsplit('/', 1)[0]}/{DETAILS_FILE}"
@@ -1254,7 +1311,7 @@ def write_list_index(path: Path, lists: list[dict[str, Any]]) -> bool:
 def write_community_catalogs(
     community_path: Path,
     index_path: Path,
-    official_path: Path,
+    official_path: Path | None,
     plugins: list[dict[str, Any]],
     repository: str,
     ref: str,
@@ -1281,7 +1338,7 @@ def write_community_catalogs(
             stale.unlink()
             changes[f"removed-{stale.name}"] = True
 
-    lists = list_index_entries(repository, ref, official_path.name, community_path.name, partitions)
+    lists = list_index_entries(repository, ref, official_path.name if official_path else None, community_path.name, partitions)
     changes["list-index"] = write_list_index(index_path, lists)
     return changes
 
@@ -1375,7 +1432,7 @@ def main() -> int:
             write_community_catalogs(
                 Path(args.community_output),
                 Path(args.list_index_output),
-                official_path,
+                official_path if official_plugins else None,
                 community_plugins,
                 args.catalog_repository,
                 args.catalog_ref,

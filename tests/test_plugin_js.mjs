@@ -191,12 +191,17 @@ test('browser hub loads custom catalogs and only offers directional updates', as
     }
 
     if (url.startsWith('/api/files?path=')) {
-      return response({
-        json: [
-          { name: 'monthwallpaper', isDirectory: true },
-          { name: 'send2ereader', isDirectory: true },
-        ],
-      });
+      const path = new URL(url, 'http://device').searchParams.get('path');
+      if (path === '/.crosspoint/plugins') {
+        return response({
+          json: [
+            { name: 'pluginhub', isDirectory: true },
+            { name: 'monthwallpaper', isDirectory: true },
+            { name: 'send2ereader', isDirectory: true },
+          ],
+        });
+      }
+      return response({ json: [] });
     }
 
     if (url === '/delete') {
@@ -379,8 +384,8 @@ test('browser hub adopts api.dir while migrating legacy config', async () => {
       if (url.includes('/repos/jadehawk/PluginHub.crosspoint-plugin/releases/latest')) {
         return { status: 200, body: JSON.stringify({ tag_name: 'v0.1.4' }) };
       }
-      if (url === OFFICIAL_CATALOG) {
-        return { status: 200, body: JSON.stringify({ name: 'Official Plugins', plugins: [] }) };
+      if (url === COMMUNITY_CATALOG) {
+        return { status: 200, body: JSON.stringify({ name: 'Community Plugins', plugins: [] }) };
       }
       if (url === PRIVATE_CATALOG) {
         return { status: 200, body: JSON.stringify({ name: 'Private', plugins: [] }) };
@@ -410,4 +415,160 @@ test('browser hub adopts api.dir while migrating legacy config', async () => {
   const customRows = document.elements['ph-custom-catalogs'].children;
   assert.equal(customRows.length, 1);
   assert.equal(customRows[0].children[0].children[0].value, PRIVATE_CATALOG);
+});
+
+test('browser hub falls back to built-in catalog URLs when list index is unavailable', async () => {
+  const document = fakeDocument();
+  const relayCalls = [];
+
+  async function fetch(url) {
+    if (url.startsWith('/download?path=')) {
+      const path = new URL(url, 'http://device').searchParams.get('path');
+      if (path === '/.crosspoint/plugins/pluginhub/manifest.json') {
+        return response({ text: JSON.stringify({ version: '0.1.6' }) });
+      }
+      return response({ status: 404 });
+    }
+    if (url.startsWith('/api/files?path=')) {
+      return response({ json: [] });
+    }
+    throw new Error('unexpected fetch: ' + url);
+  }
+
+  const api = {
+    dir: '/.crosspoint/plugins/pluginhub',
+    async writeFile() {
+      return { ok: true };
+    },
+    async relay(method, url) {
+      assert.equal(method, 'GET');
+      relayCalls.push(url);
+      if (url === LIST_INDEX) {
+        return { status: 503, error: 'index unavailable' };
+      }
+      if (url.includes('/repos/jadehawk/PluginHub.crosspoint-plugin/releases/latest')) {
+        return { status: 200, body: JSON.stringify({ tag_name: 'v0.1.6' }) };
+      }
+      if (url === COMMUNITY_CATALOG) {
+        return { status: 200, body: JSON.stringify({ name: 'Community Plugins', plugins: [] }) };
+      }
+      return { status: 404, body: '' };
+    },
+    async fetchToSd() {
+      return { status: 200 };
+    },
+  };
+
+  const render = await loadPlugin({ document, fetch });
+  await render({ innerHTML: '' }, api);
+
+  assert.equal(relayCalls[0], LIST_INDEX);
+  assert.ok(relayCalls.includes(COMMUNITY_CATALOG));
+  const catalogRows = document.elements['ph-catalogs'].children;
+  assert.equal(catalogRows.length, 1);
+  assert.match(catalogRows[0].children[0].innerHTML, /Community Plugins/);
+  assert.equal(catalogRows[0].children[1].textContent, 'Selected');
+  assert.match(document.elements['ph-status'].textContent, /0 plugins available/);
+});
+
+test('browser hub preserves alternate plugin root for updates and removal', async () => {
+  const document = fakeDocument();
+  const fetchToSdCalls = [];
+  const deletedPaths = [];
+  const officialCatalog = {
+    name: 'Official Plugins',
+    plugins: [
+      {
+        name: 'altplugin',
+        title: 'Alternate Root Plugin',
+        version: '1.1.0',
+        base: 'https://example.test/altplugin/',
+        files: ['manifest.json', 'plugin.js'],
+      },
+    ],
+  };
+
+  async function fetch(url, options = {}) {
+    if (url.startsWith('/download?path=')) {
+      const path = new URL(url, 'http://device').searchParams.get('path');
+      if (path === '/.crosspoint/plugins/pluginhub/manifest.json') {
+        return response({ text: JSON.stringify({ version: '0.1.6' }) });
+      }
+      if (path === '/plugins/altplugin/manifest.json') {
+        return response({ text: JSON.stringify({ version: '1.0.0' }) });
+      }
+      return response({ status: 404 });
+    }
+    if (url.startsWith('/api/files?path=')) {
+      const path = new URL(url, 'http://device').searchParams.get('path');
+      if (path === '/plugins') {
+        return response({ json: [{ name: 'altplugin', isDirectory: true }] });
+      }
+      return response({ json: [] });
+    }
+    if (url === '/mkdir') {
+      return response({});
+    }
+    if (url === '/delete') {
+      deletedPaths.push(new URLSearchParams(options.body || '').get('path'));
+      return response({});
+    }
+    throw new Error('unexpected fetch: ' + url);
+  }
+
+  const api = {
+    dir: '/.crosspoint/plugins/pluginhub',
+    async writeFile() {
+      return { ok: true };
+    },
+    async relay(method, url) {
+      assert.equal(method, 'GET');
+      if (url === LIST_INDEX) {
+        return {
+          status: 200,
+          body: JSON.stringify({
+            lists: [{ title: 'Official Plugins', url: OFFICIAL_CATALOG }],
+          }),
+        };
+      }
+      if (url.includes('/repos/jadehawk/PluginHub.crosspoint-plugin/releases/latest')) {
+        return { status: 200, body: JSON.stringify({ tag_name: 'v0.1.6' }) };
+      }
+      if (url === OFFICIAL_CATALOG) {
+        return { status: 200, body: JSON.stringify(officialCatalog) };
+      }
+      return { status: 404, body: '' };
+    },
+    async fetchToSd(url, dest) {
+      fetchToSdCalls.push({ url, dest });
+      return { status: 200 };
+    },
+  };
+
+  const render = await loadPlugin({ document, fetch });
+  await render({ innerHTML: '' }, api);
+
+  let cards = document.elements['ph-list'].children.filter(
+    (child) => child.className === 'setting-row'
+  );
+  assert.equal(cards.length, 1);
+  assert.equal(cards[0].children[1].children[0].textContent, 'Update');
+
+  await cards[0].children[1].children[0].onclick();
+  assert.deepEqual(fetchToSdCalls, [
+    { url: 'https://example.test/altplugin/manifest.json', dest: '/plugins/altplugin/manifest.json' },
+    { url: 'https://example.test/altplugin/plugin.js', dest: '/plugins/altplugin/plugin.js' },
+  ]);
+
+  cards = document.elements['ph-list'].children.filter(
+    (child) => child.className === 'setting-row'
+  );
+  const remove = cards[0].children[1].children.find((child) => child.textContent === 'Remove');
+  assert.ok(remove);
+  await remove.onclick();
+  assert.deepEqual(deletedPaths, [
+    '/plugins/altplugin/manifest.json',
+    '/plugins/altplugin/plugin.js',
+    '/plugins/altplugin',
+  ]);
 });

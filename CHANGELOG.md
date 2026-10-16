@@ -6,7 +6,13 @@
 - Publish a dynamic catalog-list index so native Plugin Hub can follow Community catalog splits without requiring a plugin update.
 - Add `blacklist.json`; repositories listed there are omitted from every generated catalog before whitelist or Official classification is applied.
 - Add optional curated `DETAILS.md` payload content, convert its safe Markdown subset to versioned semantic HTML during catalog generation, and publish additive rich-details metadata for capable firmware with backward-compatible fallback.
-- Add Plugin Hub itself to the Official catalog so installed copies can be updated through the normal catalog bundle update path.
+- Preserve the backward-compatible `catalog.json` union as the 0.1.6 baseline while capability-aware firmware uses `browse.lists_url` for dynamic Community catalog navigation and future named-list expansion.
+- Propagate optional plugin `compatibility` metadata through release discovery, curated catalogs, and release-asset imports, normalize it for native firmware filtering, and map the compatibility fields in `device.json`.
+- Align the browser WebUI with firmware plugin discovery across `/.crosspoint/plugins`, `/plugins`, and `/.plugins`, preserving an existing plugin's root for update, reinstall, and removal.
+- Let the browser WebUI fall back to the built-in Community catalog URL when the dynamic catalog-list index is temporarily unavailable.
+- Publish all currently discovered plugins through Community Plugins; Official classification remains dormant and can be reintroduced later by policy.
+- Show `Plugin Hub v0.1.6` in the installed Plugins picker.
+- Keep Plugin Hub itself discoverable in Community Plugins so installed copies can be updated through the normal catalog bundle update path.
 - Reset automatic discovery to the folder-first repository standard: one plugin repository with exactly one direct child `<plugin-id>.crosspoint-plugin/` installable payload directory.
 - Keep Plugin Hub itself as the intentional root-layout exception so its firmware bootstrap, root catalogs, and production `stable` branch remain unchanged.
 - Add `PLUGIN_HUB_AGENT_GUIDE.md` so developers can hand the publishing contract directly to an AI coding agent.
