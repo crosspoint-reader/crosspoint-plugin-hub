@@ -288,7 +288,7 @@ def normalize_compatibility(value: Any) -> dict[str, Any] | None:
         raise CatalogError("compatibility must be a JSON object")
 
     normalized: dict[str, Any] = {}
-    for field in ("firmware_family", "firmware", "requires"):
+    for field in ("firmware_family", "requires"):
         tokens = normalize_compatibility_csv_field(value.get(field), field)
         if tokens is not None:
             normalized[field] = tokens

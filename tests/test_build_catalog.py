@@ -95,14 +95,12 @@ class CatalogBuilderTests(unittest.TestCase):
             build_catalog.normalize_compatibility(
                 {
                     "firmware_family": ["crosspoint", "crosspoint"],
-                    "firmware": "crosspoint,razor-crest",
                     "plugin_api_min": "2",
                     "requires": ["catalog.item_details", "catalog.compatibility"],
                 }
             ),
             {
                 "firmware_family": "crosspoint",
-                "firmware": "crosspoint,razor-crest",
                 "plugin_api_min": 2,
                 "requires": "catalog.item_details,catalog.compatibility",
             },
@@ -115,10 +113,10 @@ class CatalogBuilderTests(unittest.TestCase):
             build_catalog.normalize_compatibility({"plugin_api_min": -1})
 
     def test_plugin_id_prefers_valid_manifest_name(self):
-        manifest = {"name": "send2ereader"}
+        manifest = {"name": "sampleplugin"}
         self.assertEqual(
             build_catalog.derive_plugin_id("SomethingElse.xp-plugin", manifest),
-            "send2ereader",
+            "sampleplugin",
         )
 
     def test_plugin_id_falls_back_to_repo_name(self):
@@ -173,10 +171,10 @@ class CatalogBuilderTests(unittest.TestCase):
     def test_build_entry_uses_release_tag_as_immutable_base(self):
         client = FakeClient(
             manifest={
-                "name": "send2ereader",
-                "title": "Send2Ereader",
-                "description": "Send books to CrossPoint.",
-                "author": "Jadehawk",
+                "name": "sampleplugin",
+                "title": "Sample Plugin",
+                "description": "Example plugin for CrossPoint.",
+                "author": "Example Author",
                 "version": "0.1.2",
                 "compatibility": {
                     "firmware_family": ["crosspoint"],
@@ -185,9 +183,9 @@ class CatalogBuilderTests(unittest.TestCase):
                 },
                 "files": ["manifest.json", "device.json", "plugin.js", "README.md"],
             },
-            root=[{"name": "send2ereader.crosspoint-plugin", "type": "dir"}],
+            root=[{"name": "sampleplugin.crosspoint-plugin", "type": "dir"}],
             directories={
-                "send2ereader.crosspoint-plugin": [
+                "sampleplugin.crosspoint-plugin": [
                     {"name": "manifest.json", "type": "file"},
                     {"name": "device.json", "type": "file"},
                     {"name": "plugin.js", "type": "file"},
@@ -196,14 +194,14 @@ class CatalogBuilderTests(unittest.TestCase):
             },
         )
         repo = {
-            "full_name": "jadehawk/send2ereader.crosspoint-plugin",
-            "name": "send2ereader.crosspoint-plugin",
+            "full_name": "example-owner/sampleplugin.crosspoint-plugin",
+            "name": "sampleplugin.crosspoint-plugin",
             "description": "fallback",
-            "owner": {"login": "jadehawk"},
+            "owner": {"login": "example-owner"},
         }
         release = {
             "tag_name": "v0.1.2",
-            "html_url": "https://github.com/jadehawk/send2ereader.crosspoint-plugin/releases/tag/v0.1.2",
+            "html_url": "https://github.com/example-owner/sampleplugin.crosspoint-plugin/releases/tag/v0.1.2",
             "published_at": "2026-10-01T12:00:00Z",
         }
 
@@ -213,7 +211,7 @@ class CatalogBuilderTests(unittest.TestCase):
         self.assertEqual(entry["version"], "0.1.2")
         self.assertEqual(
             entry["base"],
-            "https://raw.githubusercontent.com/jadehawk/send2ereader.crosspoint-plugin/v0.1.2/send2ereader.crosspoint-plugin/",
+            "https://raw.githubusercontent.com/example-owner/sampleplugin.crosspoint-plugin/v0.1.2/sampleplugin.crosspoint-plugin/",
         )
         self.assertEqual(entry["files"], client.manifest["files"])
         self.assertEqual(
@@ -447,10 +445,10 @@ class CatalogBuilderTests(unittest.TestCase):
                             ],
                         },
                         {
-                            "name": "send2ereader",
-                            "title": "Old Send2Ereader",
+                            "name": "sampleplugin",
+                            "title": "Old Sample Plugin",
                             "description": "Legacy entry.",
-                            "author": "Jadehawk",
+                            "author": "Example Author",
                             "version": "0.1.0",
                             "base": "https://example.invalid/",
                             "files": ["manifest.json", "device.json"],
@@ -579,7 +577,6 @@ class CatalogBuilderTests(unittest.TestCase):
             "author": "Readest",
             "version": "0.12.10",
             "compatibility": {
-                "firmware": ["crosspoint", "razor-crest"],
                 "plugin_api_min": 1,
             },
             "files": ["manifest.json", "device.json", "plugin.js", "README.md"],
@@ -630,7 +627,7 @@ class CatalogBuilderTests(unittest.TestCase):
         )
         self.assertEqual(
             plugins[0]["compatibility"],
-            {"firmware": "crosspoint,razor-crest", "plugin_api_min": 1},
+            {"plugin_api_min": 1},
         )
 
     def test_release_asset_repository_processes_multiple_matching_zips(self):

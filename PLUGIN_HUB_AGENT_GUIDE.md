@@ -54,24 +54,22 @@ Do not move tests, CI workflows, source-only tooling, screenshots, build scripts
 14. Preserve the plugin's installed destination name and runtime behavior unless the user explicitly asks for behavioral changes.
 15. Run the repository's existing validation/tests after reorganizing it and show the resulting Git diff before release.
 
-## Future-capable / dual-mode plugin design
+## Capability-aware plugin design
 
-When creating a new plugin or materially revising `device.json`, do not design only for the capabilities of the current basic CrossPoint firmware if the same package can degrade gracefully. Prefer the dual-mode / progressive-enhancement model documented in `PLUGIN_REPOSITORY_STANDARD.md`.
+When creating a new plugin or materially revising `device.json`, design against the CrossPoint plugin contract rather than a specific firmware build name. Prefer the dual-mode / progressive-enhancement model documented in `PLUGIN_REPOSITORY_STANDARD.md` when a useful baseline is possible.
 
 Agent rules:
 
-1. Preserve a complete baseline path using fields current CrossPoint understands.
-2. Add optional enhanced fields beside the baseline so newer/capability-aware firmware can provide richer behavior without requiring a separate plugin fork.
-3. For catalog plugins targeting the current contract, keep `browse.url` as a complete baseline and add `browse.lists_url` only when dynamic named lists are needed. Do not ship embedded `browse.lists` beside `browse.lists_url` expecting remote-first behavior: current firmware treats embedded lists as authoritative.
+1. Preserve a complete baseline path using fields understood by older plugin-enabled firmware.
+2. Add optional current-contract fields beside the baseline so current CrossPoint can provide richer behavior without requiring a separate plugin package.
+3. For catalog plugins, keep `browse.url` as a complete baseline and add `browse.lists_url` only when dynamic named lists are needed. Do not ship embedded `browse.lists` beside `browse.lists_url` expecting remote-first behavior: embedded lists are authoritative.
 4. If `browse.lists_url` is used, keep the `browse.url` catalog fully usable for firmware that ignores the newer field. Do not assume the native list-index path automatically falls back if the remote index fails.
 5. Use `compatibility.requires` only for a **hard dependency** that makes the plugin unusable when absent. Do not require a capability merely because it improves presentation.
-6. Prefer generic firmware capabilities and plugin API levels over exact firmware-ID checks. Do not special-case Razor-Crest when a named capability can express the requirement.
-7. Treat unknown enhanced fields as optional progressive enhancements unless the firmware contract explicitly requires otherwise.
-8. Keep the baseline experience useful on current CrossPoint even if enhanced UI, images, settings, notices, cache, or other newer fields are ignored.
+6. Prefer generic firmware capabilities and plugin API levels over firmware-version or build-name checks.
+7. Treat unknown fields as optional progressive enhancements unless the CrossPoint plugin contract explicitly requires otherwise.
+8. Keep the baseline experience useful even when optional notices, compatibility filtering, rich item details, or dynamic lists are unavailable.
 
-The physically tested reference implementation is [Wallpaper Downloader](https://github.com/jadehawk/wallpapers.crosspoint-plugin), especially the `v0.1.1` `device.json` and catalog generator. The same installed plugin package was tested on current CrossPoint `develop` and Razor-Crest: basic firmware used the embedded catalog/list UI, while capable firmware used the live list index and richer UI/features.
-
-Before inventing a second firmware-specific plugin package, first determine whether a single dual-mode package can provide a reasonable baseline and progressively enhance on newer firmware.
+Before creating a firmware-specific plugin package, first determine whether one package can provide a reasonable baseline and progressively enhance on current CrossPoint.
 
 ## Release contract
 

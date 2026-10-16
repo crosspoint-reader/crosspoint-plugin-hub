@@ -127,15 +127,15 @@ test('browser hub loads custom catalogs and only offers directional updates', as
     name: 'Community Plugins',
     plugins: [
       {
-        name: 'monthwallpaper',
-        title: 'Month Wallpaper',
+        name: 'sample-newer',
+        title: 'Sample Newer',
         version: '1.0.0',
-        base: 'https://example.test/month/',
+        base: 'https://example.test/newer/',
         files: ['manifest.json', 'plugin.js'],
       },
       {
-        name: 'send2ereader',
-        title: 'Send2Ereader',
+        name: 'sampleplugin',
+        title: 'Sample Plugin',
         version: '0.1.2.2',
         base: 'https://example.test/send/',
         files: ['manifest.json', 'device.json', 'plugin.js'],
@@ -173,10 +173,10 @@ test('browser hub loads custom catalogs and only offers directional updates', as
       if (path === '/.crosspoint/plugins/pluginhub/manifest.json') {
         return response({ text: JSON.stringify({ version: '0.1.1' }) });
       }
-      if (path === '/.crosspoint/plugins/monthwallpaper/manifest.json') {
+      if (path === '/.crosspoint/plugins/sample-newer/manifest.json') {
         return response({ text: JSON.stringify({ version: '1.1.0' }) });
       }
-      if (path === '/.crosspoint/plugins/send2ereader/manifest.json') {
+      if (path === '/.crosspoint/plugins/sampleplugin/manifest.json') {
         return response({ text: JSON.stringify({ version: '0.1.2.1' }) });
       }
       if (path === '/.crosspoint/plugins/pluginhub/.catalog-cache.json') {
@@ -191,8 +191,8 @@ test('browser hub loads custom catalogs and only offers directional updates', as
         return response({
           json: [
             { name: 'pluginhub', isDirectory: true },
-            { name: 'monthwallpaper', isDirectory: true },
-            { name: 'send2ereader', isDirectory: true },
+            { name: 'sample-newer', isDirectory: true },
+            { name: 'sampleplugin', isDirectory: true },
           ],
         });
       }

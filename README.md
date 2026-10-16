@@ -14,11 +14,11 @@ alphabetical shards when its compact serialized size approaches the firmware lim
 The compatibility union is not exposed as a separate browsing choice.
 
 > [!NOTE]
-> **0.1.6 is staged on `main` and release-gated on the supporting firmware.**
+> **0.1.6 is staged on `main`.** Current CrossPoint firmware provides the plugin-system capability contract used by 0.1.6.
 > Production `stable` and the latest stable GitHub Release remain 0.1.5 until
-> that firmware lands. The 0.1.6 package remains dual-mode: firmware that does
+> 0.1.6 is intentionally published. The package remains dual-mode: older firmware that does
 > not understand `browse.lists_url` continues through the baseline `browse.url`
-> (`catalog.json` union), while capable firmware uses the dynamic
+> (`catalog.json` union), while current CrossPoint uses the dynamic
 > Community-focused `catalog-lists.json` index.
 
 For maintainer details on whitelist/blacklist behavior, dynamic catalog generation,
@@ -347,11 +347,6 @@ version will not produce a usable version update for installed users.** The
 snapshot SHA may change, but the version remains the same. Maintainers of curated
 catalog entries must bump their catalog `version` whenever runtime plugin files
 change.
-
-The current whitelist imports selected entries from the existing CrossPoint
-Plugin Store but intentionally excludes its legacy `send2ereader` entry.
-`jadehawk/send2ereader.crosspoint-plugin` is release-discovered and is the
-authoritative Community source for the `send2ereader` plugin ID.
 
 ## Curated whitelist
 

@@ -100,12 +100,11 @@ Plugin IDs use lowercase letters, digits, and hyphens.
 
 Versions must use `MAJOR.MINOR.PATCH`, for example `1.2.0`.
 
-`compatibility` is optional. **If it is omitted, Plugin Hub does not restrict the plugin and compatible firmware will display it normally.** Add it only when the plugin actually depends on a particular firmware family, firmware implementation, plugin API level, or named capability.
+`compatibility` is optional. **If it is omitted, Plugin Hub does not restrict the plugin and compatible firmware will display it normally.** Add it only when the plugin actually depends on a particular firmware family, plugin API level, or named capability.
 
 Supported restrictions are:
 
-- `firmware_family`: one or more compatible families. Stock CrossPoint uses `crosspoint`. A compatible fork can keep the `crosspoint` family.
-- `firmware`: one or more exact firmware IDs. Stock CrossPoint uses `crosspoint`; a fork can use its own ID when a plugin depends on fork-only behavior.
+- `firmware_family`: one or more compatible families. CrossPoint uses `crosspoint`.
 - `plugin_api_min`: minimum numeric plugin API level required.
 - `requires`: capabilities that the firmware must advertise; every listed capability must be present.
 
@@ -121,15 +120,15 @@ Development-only files outside the payload directory are never installed.
 
 ## Dual-mode plugins and progressive enhancement
 
-New plugins should be designed so the same package can run on the current CrossPoint plugin system **and** take advantage of richer firmware capabilities when they are available. This is the preferred authoring model when a useful baseline experience can be provided without the newer capability.
+New plugins should be designed so the same package can provide a useful baseline on older plugin-enabled firmware and use the current CrossPoint plugin contract when available. This is the preferred authoring model when a meaningful baseline experience is possible.
 
 The rule is simple:
 
-1. Put a complete baseline experience in the fields current CrossPoint already understands.
-2. Add enhanced fields beside that baseline instead of creating a second fork-specific plugin whenever possible.
-3. Older firmware may ignore fields it does not understand; capable firmware can consume them and provide the richer experience.
+1. Put a complete baseline experience in broadly supported plugin fields.
+2. Add current CrossPoint contract fields beside that baseline instead of creating a firmware-specific package whenever possible.
+3. Older firmware may ignore fields it does not understand; current CrossPoint can consume them and provide the richer experience.
 4. Use `compatibility.requires` only when the plugin truly cannot function without a named capability. Do **not** use `requires` merely because the plugin becomes nicer when that capability exists.
-5. Prefer capability-based behavior over firmware-name checks. A future CrossPoint release or another compatible fork should be able to gain the same enhancement by implementing the same capability.
+5. Prefer capability-based behavior over firmware-version or build-name checks so future CrossPoint releases can provide the same enhancement through the same capability.
 
 This lets one repository, one Release, one plugin ID, and one installed payload serve multiple firmware generations.
 
@@ -179,23 +178,9 @@ its baseline `browse.url` and uses `catalog-lists.json` only for the enhanced
 dynamic named-list navigation. This keeps one package usable across firmware
 generations without disabling the dynamic shard layout on capable firmware.
 
-### Optional enhanced presentation
+### CrossPoint capability-aware presentation
 
-A dual-mode `device.json` may also carry richer presentation/configuration fields for firmware that understands them, while keeping the baseline browse/download contract intact. Examples currently used by the enhanced firmware work include:
-
-- declarative plugin tabs and settings (`ui`, `settings`, `{cfg.KEY}` values);
-- grid/list presentation controls;
-- catalog thumbnails and image previews;
-- per-list notices;
-- catalog/image caching and cache seeds;
-- compatibility filtering;
-- bundle installation and installed-version tracking.
-
-Do not assume every firmware implements every field. The baseline path should remain useful when those fields are ignored. If an enhancement is only optional, leave it out of `compatibility.requires`.
-
-### Capability-aware hard requirements
-
-Current capability-aware firmware can advertise named plugin-system capabilities. The Razor-Crest reference implementation currently exposes capability names including:
+Current CrossPoint firmware advertises these plugin-system capabilities:
 
 - `catalog.lists`
 - `catalog.notices`
@@ -203,48 +188,46 @@ Current capability-aware firmware can advertise named plugin-system capabilities
 - `catalog.version_tracking`
 - `catalog.compatibility`
 - `catalog.item_details`
-- `catalog.images`
-- `catalog.cache`
 
 These names describe generic plugin-system features, not Plugin Hub-specific behavior. Any plugin may use them.
 
-Use them as hard requirements only when absence of the feature makes the plugin unusable. Example:
+Use a capability as a hard requirement only when the plugin cannot function without it. For example, a plugin that has no meaningful fallback without dynamic named-list navigation may declare:
 
 ```json
 {
   "compatibility": {
     "firmware_family": ["crosspoint"],
     "plugin_api_min": 1,
-    "requires": ["catalog.images"]
+    "requires": ["catalog.lists"]
   }
 }
 ```
 
-A plugin that can fall back to a text list should **not** require `catalog.images` simply because capable firmware can show thumbnails.
+A plugin that can fall back to a complete `browse.url` catalog should not require `catalog.lists` merely because current firmware can provide the richer named-list experience.
 
 Firmware-aware request templates may use these values when a remote service needs to adapt its response:
 
 ```text
 {firmware_family}
-{firmware_id}
 {firmware_version}
 {plugin_api}
 {plugin_capabilities}
 ```
 
-Prefer these generic identity/capability values over special-casing one fork name.
+Prefer these generic identity and capability values over firmware-name checks.
 
-### Reference implementation: Wallpaper Downloader
+### Generic dual-mode example
 
-[Wallpaper Downloader](https://github.com/jadehawk/wallpapers.crosspoint-plugin) is the reference dual-mode example. Version `0.1.1` was physically tested with the **same installed plugin package** on both current CrossPoint `develop` and Razor-Crest:
+A catalog plugin can support older plugin-enabled firmware and current CrossPoint with one package:
 
-- basic CrossPoint shows the embedded category/catalog picker and standard list UI;
-- Razor-Crest uses the live `lists_url`, grid/list views, thumbnails, preview, settings, cache, and downloaded-state enhancements;
-- both firmwares use the same `manifest.json`, `device.json`, plugin version, and Release.
+- keep a complete `browse.url` baseline;
+- add `browse.lists_url` when dynamic named lists are useful;
+- attach optional list notices when user confirmation is appropriate;
+- declare `compatibility` only for true hard requirements;
+- include optional rich `DETAILS.md` content for `catalog.item_details`;
+- keep the same `manifest.json`, `device.json`, plugin ID, version, and Release across both paths.
 
-See the tested [`device.json`](https://github.com/jadehawk/wallpapers.crosspoint-plugin/blob/v0.1.1/wallpapers.crosspoint-plugin/device.json) and [`tools/build_catalog.py`](https://github.com/jadehawk/wallpapers.crosspoint-plugin/blob/v0.1.1/tools/build_catalog.py) for a production example of keeping the static baseline lists and dynamic enhanced index generated from the same source.
-
-When starting a new plugin, use this architecture as the default template whenever a meaningful baseline experience is possible.
+When starting a new plugin, use this architecture whenever a meaningful baseline experience is possible.
 
 ## GitHub Release requirements
 

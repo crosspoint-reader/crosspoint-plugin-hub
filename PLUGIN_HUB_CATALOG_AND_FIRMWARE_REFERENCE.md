@@ -1,21 +1,21 @@
 # Plugin Hub catalog and firmware reference
 
-This document is the maintainer reference for Plugin Hub catalog generation, repository allow/deny controls, the CrossPoint firmware support required by Plugin Hub 0.1.6, and the large-catalog torture testing used before release.
+This document is the maintainer reference for Plugin Hub catalog generation, repository allow/deny controls, the CrossPoint plugin-system contract used by Plugin Hub 0.1.6, and the large-catalog torture testing used before release.
 
-## Release status: Plugin Hub 0.1.6 is intentionally on standby
+## Release status
 
-Plugin Hub `0.1.6` is ready on `main`, but it must not become the stable Plugin Hub release until the matching CrossPoint firmware support is merged and available to users.
+Plugin Hub `0.1.6` is staged on `main`. Current CrossPoint firmware implements the plugin-system contract used by 0.1.6.
 
 Production remains:
 
 - `stable` branch: Plugin Hub 0.1.5
 - latest stable GitHub Release: `v0.1.5`
-- firmware Settings -> Install Plugin Hub: downloads from `stable`, so normal users continue to receive 0.1.5
-- Plugin Hub's own Community catalog entry: resolves from the latest stable GitHub Release, so it continues to advertise 0.1.5 until `v0.1.6` is published
+- the optional **Home → Plugins** bootstrap installs from the production Plugin Hub endpoint, so normal users continue to receive the stable release
+- Plugin Hub's own Community catalog entry resolves from the latest stable GitHub Release, so it continues to advertise 0.1.5 until `v0.1.6` is published
 
-Why the gate exists: 0.1.6 adds dynamic named-list navigation through `browse.lists_url`, notices, compatibility filtering, rich item details, and the hardened generic bundle/update behavior described below. Older plugin-enabled firmware can still use the backward-compatible `browse.url` union catalog, but it cannot provide the complete 0.1.6 native experience. The supporting firmware is therefore the release gate.
+Plugin Hub 0.1.6 uses dynamic named-list navigation through `browse.lists_url`, notices, compatibility filtering, rich item details, and the hardened generic bundle/update behavior described below. Older plugin-enabled firmware can still use the backward-compatible `browse.url` union catalog, while current CrossPoint provides the complete native experience.
 
-After the firmware change is merged/released, publish `v0.1.6`. The stable-promotion workflow can then move `stable` to 0.1.6, the catalog refresh will advertise 0.1.6, and existing 0.1.5 users can update Plugin Hub through the normal plugin bundle updater.
+When `v0.1.6` is intentionally published, the stable-promotion workflow moves `stable` to that release, the catalog refresh advertises 0.1.6, and existing 0.1.5 users can update Plugin Hub through the normal plugin bundle updater.
 
 ## Catalog sources
 
@@ -167,11 +167,9 @@ The notice is data in `catalog-lists.json`; the firmware enhancement makes the g
 
 This is generic firmware functionality, not hard-coded Plugin Hub UI, so other plugins can attach notices to named catalog lists as well.
 
-## Plugin-agnostic firmware capability set associated with Plugin Hub 0.1.6
+## CrossPoint plugin-system capability contract used by Plugin Hub 0.1.6
 
-Plugin Hub `0.1.6` is intentionally being kept in reserve as the first reference consumer and release gate for the **current upstream PR's plugin-system additions**. Those additions are generic firmware capabilities: they are not supposed to special-case Plugin Hub, and any plugin or catalog may use them.
-
-The current PR branch advertises exactly these capability names:
+Current CrossPoint firmware advertises exactly these capability names:
 
 | Capability | Generic firmware behavior | How Plugin Hub 0.1.6 uses it | Other-plugin use |
 |---|---|---|---|
@@ -179,76 +177,57 @@ The current PR branch advertises exactly these capability names:
 | `catalog.notices` | Optional per-list confirmation notice with custom title, message, Confirm, and Cancel labels. | Displays the Community-plugin warning before entering Community catalogs. | Any plugin can place a generic warning, terms notice, destructive-action warning, or other confirmation in front of a named catalog. |
 | `catalog.bundle_install` | Multi-file bundle installation from a catalog row using a base URL, file list, and destination subdirectory. | Installs complete plugins rather than a single file. | Any catalog can distribute supported multi-file plugin bundles without a service-specific installer in firmware. |
 | `catalog.version_tracking` | Compares a catalog item's version with the installed plugin `manifest.json` and exposes Installed/Update state without offering downgrades. | Detects when an installed plugin, including Plugin Hub itself, has a newer published version. | Any plugin catalog can provide generic install/update state. |
-| `catalog.compatibility` | Filters catalog rows by firmware family, exact firmware ID, minimum plugin API, and required capability names. Missing compatibility metadata remains backward-compatible. | Prevents Plugin Hub from offering a plugin to firmware that cannot satisfy its declared hard requirements. | Any catalog can safely target capabilities instead of hard-coding firmware-version guesses. |
-| `catalog.item_details` | Opens a generic Details page before an item action, supports bounded on-demand rich HTML/text content, and falls back to catalog metadata when rich content is absent or unavailable. | Shows up to three description lines in Plugin Hub catalog rows and can render curated per-plugin details without storing long content for every catalog item. | Any catalog can provide concise rows plus an optional richer explanation page without making rich presentation a hard install requirement. |
+| `catalog.compatibility` | Filters catalog rows by firmware family, minimum plugin API, and required capability names. Missing compatibility metadata remains backward-compatible. | Prevents Plugin Hub from offering a plugin to firmware that cannot satisfy its declared hard requirements. | Any catalog can safely target capabilities instead of hard-coding firmware-version guesses. |
+| `catalog.item_details` | Opens a generic Details page before an item action, supports bounded on-demand rich HTML/text content, and falls back to catalog metadata when rich content is absent or unavailable. | Shows concise Plugin Hub catalog rows and can render curated per-plugin details without storing long content for every catalog item. | Any catalog can provide concise rows plus an optional richer explanation page without making rich presentation a hard install requirement. |
 
-The capability names are intentionally generic. They describe firmware behavior available to the whole plugin system and must not encode Plugin Hub policy, ownership, repository names, or UI branding.
+The capability names are generic. They describe firmware behavior available to the whole plugin system and must not encode Plugin Hub policy, ownership, repository names, or UI branding.
 
-### Supporting generic infrastructure in the current PR
+### Supporting generic infrastructure
 
-Not every useful addition needs a separate capability string. The current PR also adds or formalizes supporting plugin-system behavior that other plugins benefit from:
+Not every useful plugin-system behavior needs a separate capability string. Current CrossPoint also provides:
 
 - a global **Plugin System** enable/disable control, with upgrades preserving enabled state when plugin folders already exist;
 - a generic **Home → Plugins** entry and plugin discovery independent of Plugin Hub;
 - discovery across `/.crosspoint/plugins`, `/plugins`, and `/.plugins`;
 - update/install logic that reuses an already-installed plugin's existing root so settings and tokens remain with that installation;
 - transactional installation with `.installing` quarantine, staged replacement, cleanup after failure/cancel, and safe bundle-subdirectory validation;
-- firmware identity values (`firmware_family`, `firmware_id`, `plugin_api`, `plugin_capabilities`) for compatibility decisions and diagnostics;
-- request-template variables `{firmware_family}`, `{firmware_id}`, `{firmware_version}`, `{plugin_api}`, and `{plugin_capabilities}` so remote services can adapt without hard-coding one firmware fork;
+- firmware identity values (`firmware_family`, `plugin_api`, `plugin_capabilities`) for compatibility decisions and diagnostics;
+- request-template variables `{firmware_family}`, `{firmware_version}`, `{plugin_api}`, and `{plugin_capabilities}` so remote services can adapt without hard-coding a firmware version;
 - rescanning installed plugins and refreshing plugin event subscriptions after bundle installation/update so newly installed code becomes usable without a reboot.
 
-Plugin Hub `0.1.6` directly exercises the dynamic-list, notice, bundle-install, version-tracking, compatibility, and item-details portions of this contract. It should **not** be interpreted as the only plugin allowed to use them.
-
-### Razor-Crest extensions that are not part of the current upstream PR
-
-Razor-Crest currently carries additional plugin-system work developed separately in the Wallpaper/image worktree and then incorporated into the Razor-Crest firmware. These additions are **not part of the current upstream PR**:
-
-- `catalog.images` — thumbnails, grid/list presentation, list thumbnails, image request templates, JPEG/PNG/BMP handling, rounded previews, and full-screen preview support;
-- `catalog.cache` — progressive catalog-page/image caching, freshness policy, stale fallback, storage limits/eviction, cache statistics, refresh/clear controls, and optional cache seeds;
-- native plugin tabs and declarative settings backed by `config.file`, including `{cfg.KEY}` bindings;
-- independent grid/list page sizing, native Previous/Next footer navigation, selection styles, and optional preview-before-save behavior.
-
-[Wallpaper Downloader](https://github.com/jadehawk/wallpapers.crosspoint-plugin) is the reference implementation for these Razor-Crest extensions and for the dual-mode fallback model. The same plugin package was physically tested on current/basic CrossPoint and Razor-Crest.
-
-These Razor-Crest extensions are intentionally designed as generic plugin capabilities so they could be proposed upstream later, but their existence in Razor-Crest must not be presented as if they are already included in the current PR.
+Plugin Hub `0.1.6` directly exercises the dynamic-list, notice, bundle-install, version-tracking, compatibility, and item-details portions of this contract. It is not the only plugin allowed to use them.
 
 ### Firmware identity contract
 
-For stock CrossPoint builds implementing the **current PR**, the generic identity contract is:
+Stock CrossPoint advertises:
 
 ```text
 firmware_family = crosspoint
-firmware_id = crosspoint
 plugin_api = 1
 plugin_capabilities = catalog.lists,catalog.notices,catalog.bundle_install,catalog.version_tracking,catalog.compatibility,catalog.item_details
 ```
 
-Razor-Crest keeps the `crosspoint` family, uses its own firmware ID, and currently extends the advertised capability list with `catalog.images` and `catalog.cache`. Plugins should prefer family/API/capability requirements and use an exact firmware ID only when they genuinely depend on implementation-specific behavior.
+Plugins should prefer family/API/capability requirements over firmware-version checks.
 
-## Current PR evolution and detailed implementation notes
+## CrossPoint firmware behavior used by Plugin Hub
 
-The firmware work began as a Plugin Hub installation/bootstrap experiment, then was deliberately refactored so the useful pieces in the current PR live in the generic plugin platform. Dynamic-list/notices were physically exercised with the 2K/4K/6K Plugin Hub stress catalogs. The separate image/cache/settings work was developed outside this PR in the Wallpaper worktree and later incorporated into Razor-Crest, where it was physically exercised with the dual-mode Wallpaper Downloader. Plugin Hub `0.1.6` remains in reserve until the current PR capability set is appropriate to release.
+Plugin Hub uses the generic CrossPoint plugin system plus an optional firmware bootstrap entry. Plugin Hub itself remains optional; sideloaded SD-card plugins continue to work without it.
 
-Historical note: the work originally lived on `feat/install-plugin-hub-settings`, where the first implementation included a firmware-native Settings installer. That installer path was physically validated on X3, X4, X4Pro, and Seeed reTerminal Sticky, and the dynamic-list / notice extensions were later tested with the 2K/4K/6K catalog torture scenarios below. The reserve/current PR subsequently moved away from treating the Settings installer as the purpose of the work and retained the reusable plugin-system infrastructure instead.
+### 1. Optional Plugin Hub bootstrap
 
-### 1. Historical Settings installer prototype
+When the Plugin System is enabled, **Home → Plugins** shows installed plugins. If Plugin Hub is not installed and its bootstrap entry has not been hidden, CrossPoint also shows **Plugin Hub — Download, discover, and update plugins**.
 
-A firmware-native `PluginHubInstallActivity` adds **Install Plugin Hub** under Settings when Plugin Hub is not already installed.
+Selecting that entry can install Plugin Hub over Wi-Fi. The installer:
 
-It:
+- checks all supported plugin roots before offering installation;
+- downloads `manifest.json`, `device.json`, `plugin.js`, and `README.md` from the production Plugin Hub endpoint;
+- stages every download as `*.new`;
+- replaces live files only after every required file downloads successfully;
+- uses an `.installing` marker while committing the installation;
+- removes staged files after failure so retry is safe;
+- installs to `/.crosspoint/plugins/pluginhub`.
 
-- checks all supported plugin roots to determine whether Plugin Hub is already installed
-- asks for confirmation before installation
-- connects Wi-Fi using the normal catalog flow
-- downloads the four runtime files from the Plugin Hub `stable` branch:
-  - `manifest.json`
-  - `device.json`
-  - `plugin.js`
-  - `README.md`
-- stages every download as `*.new`
-- replaces the live files only after every runtime file downloaded successfully
-- removes staged files after failure so retry is safe
-- leaves `stable` as the production control point, allowing `main` to move ahead without exposing unreleased Plugin Hub code to normal users
+The bootstrap entry can be hidden without disabling the Plugin System or affecting sideloaded plugins.
 
 ### 2. Remote named-list index: `browse.lists_url`
 
@@ -363,23 +342,22 @@ The exact byte sizes above describe the committed fixtures that were physically 
 
 Before publishing `v0.1.6`:
 
-1. Confirm the approved CrossPoint firmware support for the 0.1.6 capability set is merged and available to users.
-2. Confirm the target firmware can open the production Community catalog from `catalog-lists.json`.
-3. Confirm `stable` still points to 0.1.5 until the actual 0.1.6 release is intentionally published.
-4. Confirm `device.json` and generated catalog URLs use `main`, not a temporary test branch.
-5. Run Python catalog tests and browser plugin tests.
-6. Run the 2K/4K/6K stress generator when catalog/partition logic changes materially.
-7. Publish stable GitHub Release `v0.1.6`.
-8. Let the stable-promotion workflow advance `stable` to the release.
-9. Confirm the next catalog refresh publishes Plugin Hub 0.1.6 in Community Plugins and offers an update to installed 0.1.5 copies.
+1. Confirm current CrossPoint can open the production Community catalog from `catalog-lists.json`.
+2. Confirm `stable` still points to 0.1.5 until the actual 0.1.6 release is intentionally published.
+3. Confirm `device.json` and generated catalog URLs use `main`, not a temporary test branch.
+4. Run Python catalog tests and browser plugin tests.
+5. Run the 2K/4K/6K stress generator when catalog/partition logic changes materially.
+6. Publish stable GitHub Release `v0.1.6`.
+7. Let the stable-promotion workflow advance `stable` to the release.
+8. Confirm the next catalog refresh publishes Plugin Hub 0.1.6 in Community Plugins and offers an update to installed 0.1.5 copies.
 
 ## Firmware compatibility filtering
 
 Plugin Hub carries optional `compatibility` metadata from plugin manifests and curated source catalogs into its generated catalog rows. Omitting `compatibility` is intentionally backward-compatible: the plugin is not restricted and remains visible. If compatibility is declared, firmware that implements this contract omits the row unless every declared restriction matches.
 
-The contract distinguishes a broad `firmware_family` from an exact `firmware` ID. Stock CrossPoint uses family `crosspoint` and ID `crosspoint`. A CrossPoint-derived fork can keep family `crosspoint` while assigning a distinct ID and advertising fork-specific capabilities. `plugin_api_min` requires a minimum plugin API level, while `requires` is an all-of capability list.
+Current CrossPoint compatibility filtering supports `firmware_family`, `plugin_api_min`, and `requires`. Stock CrossPoint uses family `crosspoint`; `plugin_api_min` requires a minimum plugin API level, while `requires` is an all-of capability list.
 
-Firmware request templates also expose `{firmware_family}`, `{firmware_id}`, `{firmware_version}`, `{plugin_api}`, and `{plugin_capabilities}` so a dynamic catalog service can pre-filter server-side. The device status API exposes the same identity values for diagnostics.
+Firmware request templates expose `{firmware_family}`, `{firmware_version}`, `{plugin_api}`, and `{plugin_capabilities}` so a dynamic catalog service can adapt server-side without hard-coding a firmware version.
 
 ## Files to reference
 
