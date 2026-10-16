@@ -1,110 +1,150 @@
 # Plugin Hub AI Agent Guide
 
-Use this document when asking an AI coding agent to make a CrossPoint plugin repository compatible with Plugin Hub automatic discovery.
+Use this document when asking an AI coding agent to make a CrossPoint plugin repository ready for Plugin Hub.
+
+`PLUGIN_HUB_CONTRACT.md` is authoritative. This guide explains the preferred workflow for producing a maintainable repository that conforms to that contract without changing runtime behavior unnecessarily.
 
 ## Goal
 
-Organize the repository without changing the plugin's runtime behavior.
+Produce a repository that is easy to maintain, easy to release, and automatically discoverable by Plugin Hub.
 
-Plugin Hub's preferred standard is:
+Prefer:
 
 - one public GitHub repository per plugin;
-- one direct child payload directory named `<plugin-id>.crosspoint-plugin/`;
-- development files remain outside that payload directory;
-- the payload directory contains every file that must travel with and be installed with the plugin.
+- one direct-child payload directory named `<plugin-id>.crosspoint-plugin/`;
+- development-only material outside the installable payload;
+- an explicit runtime file list in `manifest.json`;
+- stable GitHub Releases with immutable version tags;
+- capability/API requirements only when they are real hard dependencies.
 
-Treat this as the default publishing architecture, not merely one option among equals. If a source repository contains several CrossPoint plugins, prefer isolating each plugin into its own standards-compliant repository. Do not recommend Plugin Hub's release-asset monorepo exception merely because the developer currently keeps several plugins together; that path exists for genuine upstream monorepo constraints and requires maintainer approval.
+Do not reorganize the Plugin Hub repository itself using this guide. Plugin Hub is an intentional root-layout exception documented in `PLUGIN_HUB_CONTRACT.md`.
 
-## Required result
+## Canonical target layout
 
-For a plugin whose ID is `example-plugin`, produce this shape:
+For plugin ID `example-plugin`:
 
 ```text
 repository-root/
-├── .github/
-├── docs/
-├── tests/
-├── tools/
-├── README.md                     # optional repository/development README
+├── .github/                       # optional CI/release workflows
+├── docs/                          # optional development documentation
+├── tests/                         # optional tests
+├── tools/                         # optional build/release tooling
+├── README.md                      # optional repository/development README
 └── example-plugin.crosspoint-plugin/
-    ├── manifest.json
-    ├── device.json               # at least device.json or plugin.js is required
-    ├── plugin.js
-    ├── README.md                 # plugin README; this travels with the plugin
-    └── other runtime files...
+    ├── manifest.json              # REQUIRED
+    ├── device.json                # at least ONE of device.json/plugin.js REQUIRED
+    ├── plugin.js                  # at least ONE of device.json/plugin.js REQUIRED
+    ├── README.md                  # RECOMMENDED installable plugin README
+    ├── DETAILS.md                 # OPTIONAL
+    └── other runtime files...     # OPTIONAL
 ```
 
-Do not move tests, CI workflows, source-only tooling, screenshots, build scripts, package-manager metadata, or other development-only material into the plugin payload unless the installed plugin actually needs it.
+The payload directory stem must exactly match `manifest.json -> name`.
 
-## Rules
+## Agent workflow
 
-1. Inspect the repository before changing anything. Identify which files the installed CrossPoint plugin actually uses.
-2. Determine the plugin ID from `manifest.json -> name`. If `name` is missing, add a safe lowercase ID using only letters, digits, and hyphens.
-3. Create a direct child directory named exactly `<manifest.name>.crosspoint-plugin/`.
-4. Move the installable plugin payload into that directory.
-5. The payload must contain `manifest.json` and at least one of `device.json` or `plugin.js`.
-6. The plugin's README belongs inside the payload directory so it travels with the plugin.
-7. Keep repository/development material outside the payload directory.
-8. `manifest.json -> version` must be `MAJOR.MINOR.PATCH`, for example `1.2.0`.
-9. Prefer an explicit `manifest.json -> files` array listing every installed runtime file. Paths are relative to the payload directory. Never prefix them with `<plugin-id>.crosspoint-plugin/`.
-10. Nested runtime paths such as `assets/icon.png` or `lib/api.js` are allowed when declared in `files`.
-11. Do not use absolute paths, backslashes, `..`, or other traversal paths in `files`.
-12. Update repository-owned catalog or release tooling so its `base` points at the payload directory and its file list stays relative to that payload root.
-13. Update tests, packaging workflows, and release workflows to use the new payload path.
-14. Preserve the plugin's installed destination name and runtime behavior unless the user explicitly asks for behavioral changes.
-15. Run the repository's existing validation/tests after reorganizing it and show the resulting Git diff before release.
+1. **Inspect before changing anything.** Identify the files actually required by the installed plugin, existing release automation, tests, generated files, configuration/state files, and any paths assumed by runtime code.
+2. **Determine the plugin ID.** Use `manifest.json -> name`. It must be a safe lowercase ID using letters, digits, and hyphens.
+3. **Create the payload directory.** It must be a direct child named exactly `<plugin-id>.crosspoint-plugin/`.
+4. **Move only installable runtime files into the payload.** Keep tests, CI, screenshots, source-only tooling, package-manager files, build scripts, and development docs at repository root unless the installed plugin truly requires them.
+5. **Preserve runtime behavior.** Do not rename installed files, change config locations, alter API requests, or change plugin behavior unless required by the layout change or explicitly requested.
+6. **Keep required entry points.** The payload must contain `manifest.json` and at least one of `device.json` or `plugin.js`.
+7. **Include an installable README when practical.** It is recommended for maintainability and user documentation, but it is not a Plugin Hub discovery requirement.
+8. **Use an explicit `files` array.** List every installed runtime file relative to the payload root. Never prefix entries with `<plugin-id>.crosspoint-plugin/`.
+9. **Keep paths safe.** Do not use absolute paths, backslashes, `..`, or path traversal in `manifest.json -> files`.
+10. **Update repository tooling.** Adjust tests, packaging, release workflows, generated catalog helpers, and documentation so they reference the payload directory correctly.
+11. **Use a three-part version.** `manifest.json -> version` must be `MAJOR.MINOR.PATCH` such as `1.2.0`.
+12. **Prepare immutable releases.** A stable GitHub Release tag must match the manifest version, optionally prefixed with `v`.
+13. **Do not reuse Release tags.** Every runtime change intended for installed users must receive a new plugin version and new stable Release.
+14. **Validate the result.** Run the repository's existing tests/checks, inspect the final diff, and confirm the release snapshot contains the required payload structure.
 
-## Capability-aware plugin design
+## Manifest guidance
 
-When creating a new plugin or materially revising `device.json`, design against the CrossPoint plugin contract rather than a specific firmware build name. Prefer the dual-mode / progressive-enhancement model documented in `PLUGIN_REPOSITORY_STANDARD.md` when a useful baseline is possible.
+Prefer an explicit manifest such as:
 
-Agent rules:
+```json
+{
+  "name": "example-plugin",
+  "title": "Example Plugin",
+  "description": "What the plugin does.",
+  "author": "Author Name",
+  "version": "1.2.0",
+  "files": [
+    "manifest.json",
+    "device.json",
+    "plugin.js",
+    "README.md"
+  ]
+}
+```
 
-1. Preserve a complete baseline path using fields understood by older plugin-enabled firmware.
-2. Add optional current-contract fields beside the baseline so current CrossPoint can provide richer behavior without requiring a separate plugin package.
-3. For catalog plugins, keep `browse.url` as a complete baseline and add `browse.lists_url` only when dynamic named lists are needed. Do not ship embedded `browse.lists` beside `browse.lists_url` expecting remote-first behavior: embedded lists are authoritative.
-4. If `browse.lists_url` is used, keep the `browse.url` catalog fully usable for firmware that ignores the newer field. Do not assume the native list-index path automatically falls back if the remote index fails.
-5. Use `compatibility.requires` only for a **hard dependency** that makes the plugin unusable when absent. Do not require a capability merely because it improves presentation.
-6. Prefer generic firmware capabilities and plugin API levels over firmware-version or build-name checks.
-7. Treat unknown fields as optional progressive enhancements unless the CrossPoint plugin contract explicitly requires otherwise.
-8. Keep the baseline experience useful even when optional notices, compatibility filtering, rich item details, or dynamic lists are unavailable.
+Only include files that need to be installed on the reader.
 
-Before creating a firmware-specific plugin package, first determine whether one package can provide a reasonable baseline and progressively enhance on current CrossPoint.
+If the plugin includes optional richer on-device information, add `DETAILS.md` and declare it in `files`.
 
-## Release contract
+## Compatibility and capabilities
 
-For automatic Plugin Hub discovery:
+Design against the current CrossPoint plugin contract documented in `PLUGIN_HUB_CONTRACT.md`.
 
-- add the GitHub topic `crosspoint-plugin`;
-- publish a non-draft, non-prerelease GitHub Release;
-- the Release tag must match the payload manifest version, optionally prefixed with `v`;
-- the released repository snapshot must contain `<plugin-id>.crosspoint-plugin/manifest.json`;
-- publish a new version for every runtime change users should receive;
-- do not move or reuse an existing Release tag.
+Use `compatibility` only when the plugin truly requires a firmware family, minimum plugin API, or named capability to function.
 
-Plugin Hub reads automatic-discovery plugins from the immutable Release tag, not from `main`.
+Supported fields are:
 
-## Validation checklist
+```json
+{
+  "compatibility": {
+    "firmware_family": ["crosspoint"],
+    "plugin_api_min": 1,
+    "requires": ["catalog.lists"]
+  }
+}
+```
 
-Before declaring the repository Plugin Hub-ready, verify all of the following:
+Do not add `requires` simply because a capability improves presentation. Prefer generic capability/API checks over firmware build-name checks.
 
-- [ ] exactly one direct child directory ends with `.crosspoint-plugin`;
-- [ ] its directory stem exactly equals `manifest.json -> name`;
+Current CrossPoint capability names are:
+
+```text
+catalog.lists
+catalog.notices
+catalog.bundle_install
+catalog.version_tracking
+catalog.compatibility
+catalog.item_details
+```
+
+## Catalog plugins
+
+For plugins that use the generic catalog UI:
+
+- use `browse.url` for the plugin's normal catalog feed;
+- use `browse.lists_url` when remote named-list navigation is required;
+- do not combine embedded `browse.lists` with `browse.lists_url` expecting remote-first behavior, because embedded lists are authoritative;
+- use list notices only when user confirmation is appropriate;
+- use compatibility requirements only for hard dependencies;
+- keep catalog item descriptions concise and use optional details content when richer explanation is useful.
+
+## Automatic Plugin Hub discovery
+
+Before declaring the repository ready, verify:
+
+- [ ] repository is public;
+- [ ] GitHub topic `crosspoint-plugin` is present when possible (recommended registration; repository-name discovery is only a fallback);
+- [ ] exactly one direct-child directory ends in `.crosspoint-plugin`;
+- [ ] its stem exactly matches `manifest.json -> name`;
 - [ ] `manifest.json` exists inside it;
 - [ ] at least one of `device.json` or `plugin.js` exists inside it;
-- [ ] the plugin README exists inside it;
-- [ ] the manifest version is three-part numeric semver;
-- [ ] every declared `files` path is relative to the payload directory and safe;
-- [ ] every declared runtime file actually exists;
+- [ ] manifest version is three-part numeric `MAJOR.MINOR.PATCH`;
+- [ ] every declared `files` entry is safe, relative to the payload, and exists;
 - [ ] development-only files remain outside the payload;
-- [ ] release/catalog tooling points at the payload directory;
-- [ ] existing tests pass after the move;
-- [ ] a new or materially revised plugin has been checked for a usable basic-CrossPoint fallback;
-- [ ] optional enhanced behavior does not incorrectly appear in `compatibility.requires`;
-- [ ] catalog plugins that can be dual-mode keep a complete `browse.url` baseline and add `browse.lists_url` only when dynamic named-list navigation is needed; do not combine it with embedded `browse.lists` expecting remote-first behavior.
+- [ ] release/package tooling points at the correct payload root;
+- [ ] repository tests/checks pass;
+- [ ] a non-draft, non-prerelease GitHub Release will use a tag matching the manifest version.
 
-## Plugin Hub repository exception
+A normal repository that satisfies this contract does not require a Plugin Hub pull request. Plugin Hub's scheduled catalog refresh evaluates it automatically.
 
-Do not reorganize `jadehawk/PluginHub.crosspoint-plugin` using these steps.
+## Exceptional repositories
 
-Plugin Hub itself intentionally remains a root-layout exception because its firmware bootstrap, root-generated catalogs, and production `stable` branch already depend on those paths. This exception is specific to Plugin Hub and is not the model for new plugins.
+Do not recommend Plugin Hub whitelist exceptions merely because the developer currently uses an unusual repository layout.
+
+Use an exceptional Plugin Hub ingestion path only when there is a real reason the repository cannot follow the preferred one-plugin-per-repository layout, such as a genuine upstream monorepo that publishes `*.crosspoint-plugin.zip` Release assets or an explicitly curated external catalog. Those paths require Plugin Hub maintainer configuration and are defined in `PLUGIN_HUB_CONTRACT.md`.

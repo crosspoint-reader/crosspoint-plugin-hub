@@ -5,8 +5,8 @@
 - Compact generated catalogs and dynamically split oversized Community catalogs into balanced alphabetical ranges below the firmware-safe byte limit.
 - Publish a dynamic catalog-list index so native Plugin Hub can follow Community catalog splits without requiring a plugin update.
 - Add `blacklist.json`; repositories listed there are omitted from every generated catalog before whitelist or curated-source ingestion is applied.
-- Add optional curated `DETAILS.md` payload content, convert its safe Markdown subset to versioned semantic HTML during catalog generation, and publish additive rich-details metadata for capable firmware with backward-compatible fallback.
-- Preserve backward-compatible `catalog.json` as the 0.1.6 baseline while capability-aware firmware uses `browse.lists_url` for dynamic Community catalog navigation.
+- Add optional curated `DETAILS.md` payload content, convert its safe Markdown subset to versioned semantic HTML during catalog generation, and publish rich-details metadata for the current CrossPoint plugin contract.
+- Keep `catalog.json` as the union catalog feed while `browse.lists_url` drives the current dynamic Community catalog navigation.
 - Propagate optional plugin `compatibility` metadata through release discovery, curated catalogs, and release-asset imports, normalize it for native firmware filtering, and map the compatibility fields in `device.json`.
 - Align the browser WebUI with firmware plugin discovery across `/.crosspoint/plugins`, `/plugins`, and `/.plugins`, preserving an existing plugin's root for update, reinstall, and removal.
 - Let the browser WebUI fall back to the built-in Community catalog URL when the dynamic catalog-list index is temporarily unavailable.
@@ -15,7 +15,8 @@
 - Keep Plugin Hub itself discoverable in Community Plugins so installed copies can be updated through the normal catalog bundle update path.
 - Reset automatic discovery to the folder-first repository standard: one plugin repository with exactly one direct child `<plugin-id>.crosspoint-plugin/` installable payload directory.
 - Keep Plugin Hub itself as the intentional root-layout exception so its firmware bootstrap, root catalogs, and production `stable` branch remain unchanged.
-- Add `PLUGIN_HUB_AGENT_GUIDE.md` so developers can hand the publishing contract directly to an AI coding agent.
+- Add `PLUGIN_HUB_AGENT_GUIDE.md` so developers can hand the publishing workflow directly to an AI coding agent.
+- Consolidate the authoritative publishing, catalog, manifest, capability, and maintainer rules into `PLUGIN_HUB_CONTRACT.md`; keep the README as a project overview instead of a duplicate specification.
 
 ## 0.1.5
 
@@ -26,18 +27,18 @@
 - Add a concise confirmation notice before opening **Community Plugins** so third-party plugins are clearly identified as not vetted by the Dev Team.
 - Refactor the browser WebUI to browse one built-in catalog at a time, keep Official selected by default, and move custom/private catalogs into a secondary Custom catalogs section.
 - Filter the legacy union and both built-in catalog URLs out of migrated custom-catalog settings so they cannot appear as duplicate user-facing choices.
-- Add `PLUGIN_REPOSITORY_STANDARD.md` documenting the recommended no-PR standalone plugin layout and Community-by-default classification.
+- Add repository-standard documentation for the recommended no-PR standalone plugin layout and Community-by-default classification.
 - Add `release_asset_repositories` support for monorepos that publish one or more `*.crosspoint-plugin.zip` assets from stable GitHub Releases.
 - Validate release ZIPs safely, mirror declared runtime files under immutable per-plugin/version directories, and publish them through the normal Plugin Hub `base` plus `files` contract.
 - Configure `readest/readest` as the first release-asset repository and process every matching CrossPoint plugin ZIP from its newest stable Release that contains one.
 
 ## 0.1.4
 
-- Adopt the newer firmware `api.dir` plugin-directory API when available without requiring it on older firmware.
-- Store Plugin Hub configuration as plugin-local `config.json` on newer firmware, while retaining `/.crosspoint/plugin-hub.json` as the compatibility fallback.
+- Adopt the firmware `api.dir` plugin-directory API when available while retaining operation when that API is unavailable.
+- Store Plugin Hub configuration as plugin-local `config.json` when `api.dir` is available, while retaining `/.crosspoint/plugin-hub.json` as the fallback path.
 - Migrate legacy catalog settings by reading the old config when plugin-local config is absent, then saving future changes to the plugin directory without deleting the legacy file.
 - Read Plugin Hub's own `manifest.json` from its actual runtime directory for self-version detection, with the legacy `/.crosspoint/plugins/pluginhub` lookup retained as a fallback.
-- Add browser regression coverage for both the legacy API shape and the newer `api.dir` migration path.
+- Add browser regression coverage for both the no-`api.dir` path and the `api.dir` path.
 
 ## 0.1.3
 

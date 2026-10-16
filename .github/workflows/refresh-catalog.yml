@@ -9,6 +9,7 @@ on:
       - main
     paths:
       - "tools/build_catalog.py"
+      - "tools/catalog_partitions.py"
       - "tests/**"
       - "plugin.js"
       - "device.json"
