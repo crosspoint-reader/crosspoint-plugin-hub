@@ -12,8 +12,6 @@ CrossPoint.registerPlugin(async (container, api) => {
   const RELEASE_API_URL = 'https://api.github.com/repos/jadehawk/PluginHub.crosspoint-plugin/releases/latest';
   const LEGACY_CATALOG =
     'https://raw.githubusercontent.com/jadehawk/PluginHub.crosspoint-plugin/main/catalog.json';
-  const OFFICIAL_CATALOG =
-    'https://raw.githubusercontent.com/jadehawk/PluginHub.crosspoint-plugin/main/official-catalog.json';
   const COMMUNITY_CATALOG =
     'https://raw.githubusercontent.com/jadehawk/PluginHub.crosspoint-plugin/main/community-catalog.json';
   const LIST_INDEX_URL =
@@ -83,7 +81,6 @@ CrossPoint.registerPlugin(async (container, api) => {
   function isReservedCatalog(url) {
     return (
       url === LEGACY_CATALOG ||
-      url === OFFICIAL_CATALOG ||
       url === COMMUNITY_CATALOG ||
       BUILT_IN_CATALOGS.some((catalog) => catalog.url === url)
     );
@@ -466,10 +463,10 @@ CrossPoint.registerPlugin(async (container, api) => {
       remove.onclick = async () => {
         const removed = extraCatalogs[index];
         extraCatalogs.splice(index, 1);
-        if (selectedCatalog === removed) selectedCatalog = OFFICIAL_CATALOG;
+        if (selectedCatalog === removed) selectedCatalog = BUILT_IN_CATALOGS[0]?.url || COMMUNITY_CATALOG;
         renderCatalogs();
         await saveConfig();
-        if (selectedCatalog === OFFICIAL_CATALOG) await refresh();
+        if (selectedCatalog === BUILT_IN_CATALOGS[0]?.url) await refresh();
       };
 
       const inputControl = document.createElement('span');

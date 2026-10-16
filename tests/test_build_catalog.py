@@ -489,94 +489,7 @@ class CatalogBuilderTests(unittest.TestCase):
             },
         )
 
-    def test_policy_requires_one_explicit_trusted_source_per_official_plugin(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            path = Path(temp_dir) / "catalog-policy.json"
-            path.write_text(
-                json.dumps(
-                    {
-                        "official": [
-                            {
-                                "plugin": "bookfusion",
-                                "source_catalog": "https://example.test/catalog.json",
-                            },
-                            {
-                                "plugin": "webdav",
-                                "repository": "owner/webdav.crosspoint-plugin",
-                            },
-                        ]
-                    }
-                ),
-                encoding="utf-8",
-            )
-
-            policy = build_catalog.load_policy(path)
-
-        self.assertEqual(
-            policy["official"],
-            [
-                {
-                    "plugin": "bookfusion",
-                    "source_catalog": "https://example.test/catalog.json",
-                },
-                {
-                    "plugin": "webdav",
-                    "repository": "owner/webdav.crosspoint-plugin",
-                },
-            ],
-        )
-
-    def test_policy_rejects_duplicate_official_plugin_ids(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            path = Path(temp_dir) / "catalog-policy.json"
-            path.write_text(
-                json.dumps(
-                    {
-                        "official": [
-                            {"plugin": "example", "repository": "owner/one"},
-                            {"plugin": "example", "repository": "owner/two"},
-                        ]
-                    }
-                ),
-                encoding="utf-8",
-            )
-
-            with self.assertRaises(build_catalog.CatalogError):
-                build_catalog.load_policy(path)
-
-    def test_official_trusted_source_wins_over_conflicting_candidate(self):
-        trusted = {
-            "name": "bookfusion",
-            "title": "BookFusion",
-            "version": "1.2.0",
-            "source_catalog": "https://trusted.test/catalog.json",
-        }
-        untrusted = {
-            "name": "bookfusion",
-            "title": "Fake BookFusion",
-            "version": "9.9.9",
-            "repository": "attacker/bookfusion-crosspoint-plugin",
-        }
-        policy = {
-            "official": [
-                {
-                    "plugin": "bookfusion",
-                    "source_catalog": "https://trusted.test/catalog.json",
-                }
-            ]
-        }
-
-        official, community = build_catalog.split_plugins_by_policy(
-            [untrusted],
-            [trusted],
-            [],
-            policy,
-        )
-
-        self.assertEqual(official, [trusted])
-        self.assertEqual(community, [])
-
-    def test_duplicate_community_plugin_id_is_rejected(self):
+    def test_duplicate_plugin_id_is_rejected(self):
         first = {
             "name": "example",
             "title": "Example",
@@ -591,9 +504,9 @@ class CatalogBuilderTests(unittest.TestCase):
         }
 
         with self.assertRaises(build_catalog.CatalogError):
-            build_catalog.split_plugins_by_policy([first, second], [], [], {"official": []})
+            build_catalog.merge_plugins([first, second], [], [])
 
-    def test_discovery_preserves_duplicate_ids_for_policy_collision_check(self):
+    def test_discovery_preserves_duplicate_ids_for_collision_check(self):
         class DuplicateDiscoveryClient:
             repositories = [
                 {
@@ -636,39 +549,7 @@ class CatalogBuilderTests(unittest.TestCase):
         self.assertEqual(len(discovered), 2)
         self.assertEqual([item["name"] for item in discovered], ["duplicate-id", "duplicate-id"])
         with self.assertRaises(build_catalog.CatalogError):
-            build_catalog.split_plugins_by_policy(discovered, [], [], {"official": []})
-
-    def test_split_places_unlisted_plugins_in_community(self):
-        official_entry = {
-            "name": "bookfusion",
-            "title": "BookFusion",
-            "version": "1.2.0",
-            "source_catalog": "https://trusted.test/catalog.json",
-        }
-        community_entry = {
-            "name": "send2ereader",
-            "title": "Send2Ereader",
-            "version": "0.1.4",
-            "repository": "jadehawk/send2ereader.crosspoint-plugin",
-        }
-        policy = {
-            "official": [
-                {
-                    "plugin": "bookfusion",
-                    "source_catalog": "https://trusted.test/catalog.json",
-                }
-            ]
-        }
-
-        official, community = build_catalog.split_plugins_by_policy(
-            [community_entry],
-            [official_entry],
-            [],
-            policy,
-        )
-
-        self.assertEqual([item["name"] for item in official], ["bookfusion"])
-        self.assertEqual([item["name"] for item in community], ["send2ereader"])
+            build_catalog.merge_plugins(discovered, [], [])
 
     def test_load_whitelist_accepts_manual_release_asset_repository_names(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -888,20 +769,7 @@ class CatalogBuilderTests(unittest.TestCase):
             )
         self.assertEqual(plugins, [])
 
-    def test_blacklist_overrides_official_policy_and_curated_catalog_source(self):
-        policy = {
-            "official": [
-                {"plugin": "blocked", "repository": "owner/blocked"},
-                {
-                    "plugin": "blocked-catalog",
-                    "source_catalog": "https://raw.githubusercontent.com/owner/blocked/main/catalog.json",
-                },
-                {"plugin": "allowed", "repository": "owner/allowed"},
-            ]
-        }
-        filtered = build_catalog.filter_blacklisted_policy(policy, {"owner/blocked"})
-        self.assertEqual(filtered["official"], [{"plugin": "allowed", "repository": "owner/allowed"}])
-
+    def test_blacklist_blocks_curated_catalog_source_and_plugin_base(self):
         class CuratedClient:
             def fetch_json_url(self, url):
                 raise AssertionError("blacklisted curated catalog must not be fetched")
@@ -927,18 +795,9 @@ class CatalogBuilderTests(unittest.TestCase):
             "base": "https://raw.githubusercontent.com/owner/blocked/main/blocked-base/",
             "files": ["manifest.json", "plugin.js"],
         }
-        source_policy = {
-            "official": [
-                {
-                    "plugin": "blocked-base",
-                    "source_catalog": "https://raw.githubusercontent.com/owner/catalog/main/catalog.json",
-                }
-            ]
-        }
-        official, community = build_catalog.split_plugins_by_policy([], [curated_entry], [], source_policy)
-        self.assertEqual(community, [])
-        self.assertEqual(len(official), 1)
-        self.assertTrue(build_catalog.plugin_entry_is_blacklisted(official[0], {"owner/blocked"}))
+        plugins = build_catalog.merge_plugins([], [curated_entry], [])
+        self.assertEqual(len(plugins), 1)
+        self.assertTrue(build_catalog.plugin_entry_is_blacklisted(plugins[0], {"owner/blocked"}))
 
     def test_rate_limit_aborts_catalog_build_instead_of_publishing_partial_results(self):
         class RateLimitedClient:
@@ -1045,38 +904,16 @@ class CatalogBuilderTests(unittest.TestCase):
         entries = build_catalog.list_index_entries(
             "jadehawk/PluginHub.crosspoint-plugin",
             "main",
-            "official-catalog.json",
             "community-catalog.json",
             partitions,
         )
 
-        self.assertEqual(entries[0]["title"], "Official Plugins")
-        self.assertNotIn("notice", entries[0])
-        self.assertEqual(len(entries), 3)
-        for entry in entries[1:]:
+        self.assertEqual(len(entries), len(partitions))
+        for entry in entries:
             self.assertTrue(entry["title"].startswith("Community Plugins ["))
             self.assertEqual(entry["notice"]["message"], "Third-party plugins. Not vetted by Dev Team.")
             self.assertEqual(entry["notice"]["confirm"], "Continue")
             self.assertEqual(entry["notice"]["cancel"], "Go Back")
-
-    def test_dynamic_list_index_omits_official_when_not_configured(self):
-        plugins = self._synthetic_community_plugins()
-        partitions = build_catalog.partition_community_plugins(
-            plugins,
-            build_catalog.rendered_catalog_size(plugins, "Community Plugins"),
-        )
-        entries = build_catalog.list_index_entries(
-            "jadehawk/PluginHub.crosspoint-plugin",
-            "main",
-            None,
-            "community-catalog.json",
-            partitions,
-        )
-
-        self.assertTrue(entries)
-        self.assertTrue(all(entry["title"].startswith("Community Plugins") for entry in entries))
-        self.assertFalse(any(entry["title"] == "Official Plugins" for entry in entries))
-
 
     def test_write_community_catalogs_removes_stale_partition_files(self):
         plugins = self._synthetic_community_plugins()
@@ -1084,7 +921,6 @@ class CatalogBuilderTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             community = root / "community-catalog.json"
-            official = root / "official-catalog.json"
             index = root / "catalog-lists.json"
             stale = root / "community-catalog-a-z.json"
             stale.write_text("stale", encoding="utf-8")
@@ -1092,7 +928,6 @@ class CatalogBuilderTests(unittest.TestCase):
             build_catalog.write_community_catalogs(
                 community,
                 index,
-                official,
                 plugins,
                 "jadehawk/PluginHub.crosspoint-plugin",
                 "main",
@@ -1102,8 +937,8 @@ class CatalogBuilderTests(unittest.TestCase):
             self.assertFalse(stale.exists())
             self.assertFalse(community.exists())
             payload = json.loads(index.read_text(encoding="utf-8"))
-            self.assertEqual(len(payload["lists"]), 3)
-            for entry in payload["lists"][1:]:
+            self.assertGreaterEqual(len(payload["lists"]), 2)
+            for entry in payload["lists"]:
                 filename = entry["url"].rsplit("/", 1)[-1]
                 self.assertTrue((root / filename).exists())
 

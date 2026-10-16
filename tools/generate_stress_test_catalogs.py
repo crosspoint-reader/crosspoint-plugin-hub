@@ -17,12 +17,7 @@ def main() -> int:
     templates = json.loads((root / "catalog.json").read_text(encoding="utf-8"))["plugins"]
     generated_at = dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
-    entries = [
-        {
-            "title": "Official Plugins",
-            "url": f"https://raw.githubusercontent.com/{REPOSITORY}/{BRANCH}/official-catalog.json",
-        }
-    ]
+    entries = []
 
     stress_root = root / "stress"
     stress_root.mkdir(exist_ok=True)

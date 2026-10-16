@@ -6,8 +6,6 @@ import vm from 'node:vm';
 const root = new URL('../', import.meta.url);
 const LEGACY_CATALOG =
   'https://raw.githubusercontent.com/jadehawk/PluginHub.crosspoint-plugin/main/catalog.json';
-const OFFICIAL_CATALOG =
-  'https://raw.githubusercontent.com/jadehawk/PluginHub.crosspoint-plugin/main/official-catalog.json';
 const COMMUNITY_CATALOG =
   'https://raw.githubusercontent.com/jadehawk/PluginHub.crosspoint-plugin/main/community-catalog.json';
 const LIST_INDEX =
@@ -123,8 +121,8 @@ test('browser hub loads custom catalogs and only offers directional updates', as
   const fetchToSdCalls = [];
   let deletedCache = false;
 
-  const officialCatalog = {
-    name: 'Official Plugins',
+  const communityCatalog = {
+    name: 'Community Plugins',
     plugins: [
       {
         name: 'monthwallpaper',
@@ -140,11 +138,6 @@ test('browser hub loads custom catalogs and only offers directional updates', as
         base: 'https://example.test/send/',
         files: ['manifest.json', 'device.json', 'plugin.js'],
       },
-    ],
-  };
-  const communityCatalog = {
-    name: 'Community Plugins',
-    plugins: [
       {
         name: 'community-only',
         title: 'Community Only',
@@ -227,18 +220,12 @@ test('browser hub loads custom catalogs and only offers directional updates', as
         return {
           status: 200,
           body: JSON.stringify({
-            lists: [
-              { title: 'Official Plugins', url: OFFICIAL_CATALOG },
-              { title: 'Community Plugins', url: COMMUNITY_CATALOG },
-            ],
+            lists: [{ title: 'Community Plugins', url: COMMUNITY_CATALOG }],
           }),
         };
       }
       if (url.includes('/repos/jadehawk/PluginHub.crosspoint-plugin/releases/latest')) {
         return { status: 200, body: JSON.stringify({ tag_name: 'v0.1.1' }) };
-      }
-      if (url === OFFICIAL_CATALOG) {
-        return { status: 200, body: JSON.stringify(officialCatalog) };
       }
       if (url === COMMUNITY_CATALOG) {
         return { status: 502, error: 'relay failed; large bodies need /api/fetch' };
@@ -260,16 +247,14 @@ test('browser hub loads custom catalogs and only offers directional updates', as
   assert.equal(relayCalls.length, 3);
   assert.equal(relayCalls[0], LIST_INDEX);
   assert.match(relayCalls[1], /PluginHub\.crosspoint-plugin\/releases\/latest$/);
-  assert.deepEqual(relayCalls.slice(2), [OFFICIAL_CATALOG]);
+  assert.deepEqual(relayCalls.slice(2), [COMMUNITY_CATALOG]);
   assert.equal(document.elements['ph-version'].textContent, 'Version: v0.1.1');
 
   const catalogRows = document.elements['ph-catalogs'].children;
-  assert.equal(catalogRows.length, 2);
-  assert.match(catalogRows[0].children[0].innerHTML, /Official Plugins/);
+  assert.equal(catalogRows.length, 1);
+  assert.match(catalogRows[0].children[0].innerHTML, /Community Plugins/);
   assert.equal(catalogRows[0].children[1].textContent, 'Selected');
   assert.equal(catalogRows[0].children[1].disabled, true);
-  assert.match(catalogRows[1].children[0].innerHTML, /Community Plugins/);
-  assert.equal(catalogRows[1].children[1].textContent, 'Browse');
 
   const customRows = document.elements['ph-custom-catalogs'].children;
   assert.equal(customRows.length, 1);
@@ -285,22 +270,16 @@ test('browser hub loads custom catalogs and only offers directional updates', as
   let cards = document.elements['ph-list'].children.filter(
     (child) => child.className === 'setting-row'
   );
-  assert.equal(cards.length, 2);
+  assert.equal(cards.length, 3);
   assert.equal(cards[0].children[1].children[0].textContent, 'Reinstall');
   assert.equal(cards[1].children[1].children[0].textContent, 'Update');
-  assert.match(document.elements['ph-status'].textContent, /2 plugins available, 1 update/);
+  assert.equal(cards[2].children[1].children[0].textContent, 'Install');
+  assert.match(document.elements['ph-status'].textContent, /3 plugins available, 1 update/);
 
-  await catalogRows[1].children[1].onclick();
-  assert.equal(relayCalls.at(-1), COMMUNITY_CATALOG);
   assert.deepEqual(fetchToSdCalls, [
     { url: COMMUNITY_CATALOG, dest: '/.crosspoint/plugins/pluginhub/.catalog-cache.json' },
   ]);
   assert.equal(deletedCache, true);
-  cards = document.elements['ph-list'].children.filter(
-    (child) => child.className === 'setting-row'
-  );
-  assert.equal(cards.length, 1);
-  assert.equal(cards[0].children[1].children[0].textContent, 'Install');
 
   const privateBrowse = document.elements['ph-custom-catalogs'].children[0].children[1].children[0];
   await privateBrowse.onclick();
@@ -317,7 +296,7 @@ test('browser hub loads custom catalogs and only offers directional updates', as
   await document.elements['ph-refresh'].onclick();
   assert.deepEqual(JSON.parse(writes.at(-1).data), { extraCatalogs: [] });
   assert.equal(document.elements['ph-custom-catalogs'].children.length, 0);
-  assert.equal(relayCalls.at(-1), OFFICIAL_CATALOG);
+  assert.equal(relayCalls.at(-1), COMMUNITY_CATALOG);
 });
 
 test('browser hub adopts api.dir while migrating legacy config', async () => {
@@ -338,7 +317,6 @@ test('browser hub adopts api.dir while migrating legacy config', async () => {
           text: JSON.stringify({
             catalogs: [
               LEGACY_CATALOG,
-              OFFICIAL_CATALOG,
               COMMUNITY_CATALOG,
               PRIVATE_CATALOG,
             ],
@@ -374,10 +352,7 @@ test('browser hub adopts api.dir while migrating legacy config', async () => {
         return {
           status: 200,
           body: JSON.stringify({
-            lists: [
-              { title: 'Official Plugins', url: OFFICIAL_CATALOG },
-              { title: 'Community Plugins', url: COMMUNITY_CATALOG },
-            ],
+            lists: [{ title: 'Community Plugins', url: COMMUNITY_CATALOG }],
           }),
         };
       }
@@ -411,7 +386,7 @@ test('browser hub adopts api.dir while migrating legacy config', async () => {
   assert.deepEqual(JSON.parse(writes[0].data), {
     extraCatalogs: [PRIVATE_CATALOG],
   });
-  assert.deepEqual(relayCalls.slice(2), [OFFICIAL_CATALOG]);
+  assert.deepEqual(relayCalls.slice(2), [COMMUNITY_CATALOG]);
   const customRows = document.elements['ph-custom-catalogs'].children;
   assert.equal(customRows.length, 1);
   assert.equal(customRows[0].children[0].children[0].value, PRIVATE_CATALOG);
@@ -475,8 +450,8 @@ test('browser hub preserves alternate plugin root for updates and removal', asyn
   const document = fakeDocument();
   const fetchToSdCalls = [];
   const deletedPaths = [];
-  const officialCatalog = {
-    name: 'Official Plugins',
+  const communityCatalog = {
+    name: 'Community Plugins',
     plugins: [
       {
         name: 'altplugin',
@@ -527,15 +502,15 @@ test('browser hub preserves alternate plugin root for updates and removal', asyn
         return {
           status: 200,
           body: JSON.stringify({
-            lists: [{ title: 'Official Plugins', url: OFFICIAL_CATALOG }],
+            lists: [{ title: 'Community Plugins', url: COMMUNITY_CATALOG }],
           }),
         };
       }
       if (url.includes('/repos/jadehawk/PluginHub.crosspoint-plugin/releases/latest')) {
         return { status: 200, body: JSON.stringify({ tag_name: 'v0.1.6' }) };
       }
-      if (url === OFFICIAL_CATALOG) {
-        return { status: 200, body: JSON.stringify(officialCatalog) };
+      if (url === COMMUNITY_CATALOG) {
+        return { status: 200, body: JSON.stringify(communityCatalog) };
       }
       return { status: 404, body: '' };
     },

@@ -17,4 +17,4 @@ Discover, install, and update plugins from the reader without manually copying p
 
 ## Notes
 
-All currently published plugins appear in Community Plugins and are not vetted by the firmware development team. Official classification remains available as a future maintainer policy, but no Official catalog is currently advertised. Plugin Hub uses generic firmware plugin-system capabilities that are available to other plugins as well.
+All currently published plugins appear in Community Plugins and are not vetted by the firmware development team. Plugin Hub uses generic firmware plugin-system capabilities that are available to other plugins as well.

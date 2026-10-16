@@ -1,6 +1,6 @@
 # Plugin Hub catalog and firmware reference
 
-This document is the maintainer reference for Plugin Hub catalog generation, Official/Community classification, repository allow/deny controls, the CrossPoint firmware support required by Plugin Hub 0.1.6, and the large-catalog torture testing used before release.
+This document is the maintainer reference for Plugin Hub catalog generation, repository allow/deny controls, the CrossPoint firmware support required by Plugin Hub 0.1.6, and the large-catalog torture testing used before release.
 
 ## Release status: Plugin Hub 0.1.6 is intentionally on standby
 
@@ -17,15 +17,14 @@ Why the gate exists: 0.1.6 adds dynamic named-list navigation through `browse.li
 
 After the firmware change is merged/released, publish `v0.1.6`. The stable-promotion workflow can then move `stable` to 0.1.6, the catalog refresh will advertise 0.1.6, and existing 0.1.5 users can update Plugin Hub through the normal plugin bundle updater.
 
-## Catalog sources and classification
+## Catalog sources
 
-Catalog generation is intentionally split into three separate decisions:
+Catalog generation is intentionally split into two separate decisions:
 
 1. **Discovery / ingestion**: where candidates come from.
 2. **Blacklist**: which repositories must never be published.
-3. **Official policy**: which surviving plugin IDs and trusted sources are Official.
 
-Anything valid that survives the blacklist and is not explicitly Official becomes Community.
+Anything valid that survives the blacklist is published in Community.
 
 ### Automatic discovery
 
@@ -38,7 +37,7 @@ An automatically discovered plugin must have exactly one direct child `<plugin-i
 
 ### `whitelist.json`
 
-`whitelist.json` is for sources that cannot use normal automatic discovery. It is not the Official list.
+`whitelist.json` is for sources that cannot use normal automatic discovery.
 
 Example:
 
@@ -87,51 +86,25 @@ Example:
 
 Repository matching is case-insensitive.
 
-**Blacklist wins over every other catalog source or classification.** A blacklisted repository is omitted even if it:
+**Blacklist wins over every catalog source.** A blacklisted repository is omitted even if it:
 
 - is found through automatic GitHub discovery
 - appears in `whitelist.json -> repositories`
 - appears in `whitelist.json -> release_asset_repositories`
 - hosts a curated GitHub catalog
 - is the GitHub repository behind a curated plugin's `base` URL
-- is named as the trusted source of an Official plugin in `catalog-policy.json`
 
-This is intentionally stronger than the old special-case self-exclusion. Plugin Hub itself is not blacklisted.
+This is intentionally stronger than the old special-case self-exclusion. Plugin Hub itself is not blacklisted. Duplicate plugin IDs fail the catalog refresh instead of silently selecting a winner.
 
-### `catalog-policy.json`
-
-`catalog-policy.json` controls Official status. Official entries must identify one trusted source.
-
-Repository-backed example:
-
-```json
-{
-  "plugin": "pluginhub",
-  "repository": "jadehawk/PluginHub.crosspoint-plugin"
-}
-```
-
-Curated-catalog-backed example:
-
-```json
-{
-  "plugin": "bookfusion",
-  "source_catalog": "https://raw.githubusercontent.com/itsthisjustin/sd-plugins/main/catalog.json"
-}
-```
-
-If an Official plugin ID is also claimed by an untrusted source, the trusted policy source wins. Duplicate Community IDs fail the catalog refresh instead of silently selecting a winner.
-
-Plugin Hub itself currently follows the same Community policy as other published plugins. Once a future stable Plugin Hub Release is newer than the installed copy, the normal catalog updater can update Plugin Hub in place.
+Plugin Hub itself follows the same Community publishing path as other published plugins. Once a future stable Plugin Hub Release is newer than the installed copy, the normal catalog updater can update Plugin Hub in place.
 
 ## Generated catalogs
 
-The refresh workflow runs every three hours and can also be triggered manually. It validates sources, applies blacklist/policy rules, and emits compact JSON.
+The refresh workflow runs every three hours and can also be triggered manually. It validates sources, applies blacklist rules, and emits compact JSON.
 
 Generated files include:
 
-- `catalog.json` - backward-compatible union of Official + Community
-- `official-catalog.json` - Official plugins only
+- `catalog.json` - backward-compatible compatibility catalog containing the same published plugins
 - `community-catalog.json` - Community plugins when one file fits
 - `community-catalog-<range>.json` - automatically generated Community shards when splitting is required
 - `catalog-lists.json` - live native/WebUI index of the currently generated user-facing lists
@@ -178,10 +151,6 @@ Normal current shape:
   ]
 }
 ```
-
-When the Official policy is empty, the Official catalog is not advertised in this
-index. If Official entries are added again later, the generator can prepend an
-Official list entry without requiring a firmware change.
 
 When Community is split, the same index simply contains multiple Community entries with range labels. No Plugin Hub release is needed merely because the Action changed the number of shards.
 
@@ -416,12 +385,11 @@ Firmware request templates also expose `{firmware_family}`, `{firmware_id}`, `{f
 
 Plugin Hub repository:
 
-- `tools/build_catalog.py` - discovery, validation, blacklist/policy application, catalog generation
+- `tools/build_catalog.py` - discovery, validation, blacklist application, catalog generation
 - `tools/catalog_partitions.py` - compact serialization and Community partition algorithm
 - `tools/generate_stress_test_catalogs.py` - 2K/4K/6K stress fixture generator
 - `whitelist.json` - exceptional/manual ingestion sources
 - `blacklist.json` - repository deny list
-- `catalog-policy.json` - Official plugin trusted-source policy
 - `catalog-lists.json` - current generated user-facing list index
 - `device.json` - native catalog manifest using `browse.lists_url`
 - `plugin.js` - browser UI and large-catalog fallback

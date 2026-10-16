@@ -18,7 +18,7 @@ A normal standards-compliant plugin does **not** need a Plugin Hub pull request.
 
 This is the normal self-service ingress path and should be used whenever reasonably possible. Plugin Hub should not require maintainer-side exceptions simply to accommodate a developer's preferred repository organization. If several CrossPoint plugins can be isolated into separate repositories, authors are expected to do that rather than request monorepo configuration in Plugin Hub.
 
-A newly discovered plugin is published in **Community Plugins** unless maintainers explicitly classify that plugin ID and trusted source as Official in `catalog-policy.json`. Repository ownership does not determine Official status.
+A newly discovered valid plugin is published in **Community Plugins**. Repository ownership does not create a separate trust classification.
 
 ## Required repository shape
 
@@ -260,7 +260,7 @@ The generated catalog `base` points directly at the payload directory. Catalog `
 
 ## What happens after release
 
-Plugin Hub's catalog workflow runs every three hours and can also be started manually. It discovers eligible repositories, validates the Release and payload directory, and publishes valid plugins according to catalog policy. With the current empty Official policy, all valid plugins are published in Community.
+Plugin Hub's catalog workflow runs every three hours and can also be started manually. It discovers eligible repositories, validates the Release and payload directory, and publishes all valid plugins in Community.
 
 No Plugin Hub pull request, whitelist entry, or issue is required for this normal path.
 
@@ -280,15 +280,12 @@ They include:
 
 - a genuine monorepo that cannot reasonably isolate its CrossPoint plugin or plugins and therefore publishes one or more `*.crosspoint-plugin.zip` Release assets;
 - a plugin that must temporarily be imported from another catalog;
-- an exceptional repository that cannot use automatic discovery;
-- a maintainer-approved change to Official catalog policy.
+- an exceptional repository that cannot use automatic discovery.
 
-These cases are configured in `whitelist.json` and/or `catalog-policy.json` as appropriate.
+These cases are configured in `whitelist.json` as appropriate.
 
-## Official versus Community
+## Community catalog
 
-**Community** is the default classification for valid automatically discovered third-party plugins.
+**Community Plugins** is the single user-facing catalog for valid published plugins. Ambiguous duplicate plugin IDs fail the catalog refresh instead of being resolved silently.
 
-**Official** is explicit curation. An Official policy entry identifies both the plugin ID and its trusted source. If another repository claims the same Official ID, it cannot replace the trusted Official entry. Ambiguous duplicate Community IDs fail the catalog refresh instead of being resolved silently.
-
-The generated `catalog.json` remains a compatibility union. With the current empty Official policy, Plugin Hub interfaces expose Community only; Official can be reintroduced later by policy without a firmware change.
+The generated `catalog.json` remains a compatibility catalog containing the same published plugin set.

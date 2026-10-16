@@ -5,10 +5,7 @@ plugins without requiring the CrossPoint firmware repository to host or maintain
 the catalog.
 
 Plugin Hub currently publishes one user-facing **Community Plugins** catalog. All
-valid discovered plugins, including the plugins previously classified as Official,
-are published there. The Official classification machinery remains available for a
-future policy change, but no Official catalog is advertised while the Official policy
-is empty.
+valid discovered plugins are published there.
 
 For backward compatibility, `catalog.json` remains a generated union of all published
 plugins. New Plugin Hub interfaces use a generated `catalog-lists.json` index so
@@ -152,20 +149,15 @@ manual allowlist entry.
 2. Plugin Hub discovers standalone candidates on GitHub and also reads explicitly
    configured sources from `whitelist.json`.
 3. `blacklist.json` removes repositories that must never be published, regardless
-   of discovery, whitelist, release-asset, curated-catalog, or Official status.
-4. The catalog builder validates versions and install files, then applies
-   `catalog-policy.json`.
-5. With the current empty Official policy, every valid discovered plugin is
-   published in **Community Plugins**. If Official entries are added to
-   `catalog-policy.json` later, only those explicitly trusted IDs move into the
-   Official catalog.
+   of discovery, whitelist, release-asset, or curated-catalog source.
+4. The catalog builder validates versions and install files and rejects ambiguous
+   duplicate plugin IDs instead of choosing a source silently.
+5. Every valid discovered plugin is published in **Community Plugins**.
 6. The builder writes compact machine JSON. Community stays in one file while it
    fits under the native response limit, then automatically splits into the minimum
    number of balanced contiguous alphabetical shards that fit.
-7. The builder writes `catalog-lists.json`, which currently points only at the
-   Community shard layout and attaches the third-party warning to every Community
-   entry. An Official entry is added automatically only when the Official set is
-   non-empty.
+7. The builder writes `catalog-lists.json`, which points at the Community shard
+   layout and attaches the third-party warning to every Community entry.
 8. Plugin Hub's `device.json` keeps `browse.url` as the baseline union catalog and
    uses `browse.lists_url` as the capability-aware dynamic index, so shard-count
    changes do not require a Plugin Hub release.
@@ -345,17 +337,10 @@ For these entries:
   Hub resolves that branch to its current 40-character commit SHA so the files in
   the generated catalog are an immutable snapshot.
 
-Classification is intentionally separate from source ingestion. `whitelist.json`
-answers **where a candidate can come from**; `catalog-policy.json` answers **which
-specific plugin IDs and sources are Official**; and `blacklist.json` answers **which
-repositories must never be published at all**. Repository ownership alone never
-makes a plugin Official, and the blacklist always wins over whitelist and Official
-policy entries.
-
-If an Official ID is also claimed by another source, the trusted source declared
-in `catalog-policy.json` wins and the conflicting candidate is ignored. If two
-Community candidates claim the same plugin ID, the catalog refresh fails instead
-of silently selecting one.
+Source ingestion is controlled by `whitelist.json`, while `blacklist.json` answers
+which repositories must never be published at all. The blacklist always wins over
+a whitelist or discovered source. If two candidates claim the same plugin ID, the
+catalog refresh fails instead of silently selecting one.
 
 **Changing files in an upstream branch without bumping the upstream catalog
 version will not produce a usable version update for installed users.** The
@@ -424,11 +409,9 @@ Plugin Hub pull request. The recommended automatic-discovery path does not.
 }
 ```
 
-Repository matching is case-insensitive. A blacklisted repository is omitted before
-Official/Community classification, even if it is found automatically, appears in
-`whitelist.json`, is configured as a release-asset repository, backs a curated
-GitHub catalog/base URL, or is named as a trusted Official source in
-`catalog-policy.json`.
+Repository matching is case-insensitive. A blacklisted repository is omitted even
+if it is found automatically, appears in `whitelist.json`, is configured as a
+release-asset repository, or backs a curated GitHub catalog/base URL.
 
 Use the blacklist for repositories that Plugin Hub must not publish at all. Keep it
 empty when no repositories need to be suppressed.
@@ -470,12 +453,11 @@ manually. It:
    every matching plugin ZIP, and mirrors runtime files into `release-assets/`;
 6. validates release-driven entries and pins mutable GitHub Raw bases from curated
    catalogs to commit SHAs;
-7. loads `catalog-policy.json` and resolves the explicitly trusted Official IDs;
-8. rejects ambiguous Community plugin-ID collisions instead of choosing a winner;
-9. rebuilds `official-catalog.json`, `community-catalog.json`, and compatibility
-   union `catalog.json`;
-10. commits all generated catalogs and any new release-asset mirror files only when
-    staged contents changed.
+7. rejects ambiguous plugin-ID collisions instead of choosing a winner;
+8. rebuilds `community-catalog.json`, any required Community shards,
+   `catalog-lists.json`, and compatibility `catalog.json`;
+9. commits all generated catalogs and any new release-asset mirror files only when
+   staged contents changed.
 
 The generated timestamp is preserved when the catalog contents are unchanged, so
 scheduled runs do not create timestamp-only commits.
@@ -566,9 +548,7 @@ Community Plugins
 ```
 
 Selecting it opens the normal plugin list. If Community later needs multiple shards,
-the same screen shows those generated Community ranges automatically. If an Official
-policy is introduced later, the generator can add an Official entry without a
-firmware change.
+the same screen shows those generated Community ranges automatically.
 
 ### From the device web UI
 
@@ -584,9 +564,9 @@ plugin-management actions as before:
 - show installed/catalog versions and update counts.
 
 The browser card currently shows **Community Plugins** as the built-in browse
-choice. The generated list index remains authoritative, so future Community shards or
-a future Official catalog can be exposed without changing the plugin package. The
-compatibility `catalog.json` feed is not shown as another choice.
+choice. The generated list index remains authoritative, so future Community shards can
+be exposed without changing the plugin package. The compatibility `catalog.json` feed
+is not shown as another choice.
 
 #### Add custom, test, or private catalogs
 
@@ -654,14 +634,9 @@ in `device.json`.
 
 ## Trust model
 
-**Official** is an explicit curation classification, not an inference from the
-repository owner or where a plugin is hosted. Each Official plugin ID is tied to a
-trusted source in `catalog-policy.json`.
-
-**Community** contains valid plugins from third-party developers that are not
-explicitly classified Official. Automatic discovery and schema validation do not
-constitute a security review or endorsement; users should treat third-party
-plugins as software from their respective publishers.
+Plugin Hub publishes valid plugins in **Community Plugins**. Automatic discovery
+and schema validation do not constitute a security review or endorsement; users
+should treat third-party plugins as software from their respective publishers.
 
 ## Current firmware note
 
