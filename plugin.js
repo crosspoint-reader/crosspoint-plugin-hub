@@ -17,18 +17,13 @@ CrossPoint.registerPlugin(async (container, api) => {
     'https://raw.githubusercontent.com/jadehawk/PluginHub.crosspoint-plugin/main/community-catalog.json';
   const BUILT_IN_CATALOGS = [
     {
-      title: 'Official Plugins',
-      description: 'Curated and recognized for the CrossPoint ecosystem.',
-      url: OFFICIAL_CATALOG
-    },
-    {
       title: 'Community Plugins',
       description: 'Third-party plugins from CrossPoint community developers.',
       url: COMMUNITY_CATALOG
     }
   ];
 
-  let selectedCatalog = OFFICIAL_CATALOG;
+  let selectedCatalog = COMMUNITY_CATALOG;
   let extraCatalogs = [];
 
   container.innerHTML =
@@ -122,11 +117,10 @@ CrossPoint.registerPlugin(async (container, api) => {
   function saveConfig() {
     extraCatalogs = normalizeExtraCatalogs(extraCatalogs);
     if (
-      selectedCatalog !== OFFICIAL_CATALOG &&
       selectedCatalog !== COMMUNITY_CATALOG &&
       !extraCatalogs.includes(selectedCatalog)
     ) {
-      selectedCatalog = OFFICIAL_CATALOG;
+      selectedCatalog = COMMUNITY_CATALOG;
     }
     return api.writeFile(
       CONFIG_PATH,
@@ -401,10 +395,10 @@ CrossPoint.registerPlugin(async (container, api) => {
       remove.onclick = async () => {
         const removed = extraCatalogs[index];
         extraCatalogs.splice(index, 1);
-        if (selectedCatalog === removed) selectedCatalog = OFFICIAL_CATALOG;
+        if (selectedCatalog === removed) selectedCatalog = COMMUNITY_CATALOG;
         renderCatalogs();
         await saveConfig();
-        if (selectedCatalog === OFFICIAL_CATALOG) await refresh();
+        if (selectedCatalog === COMMUNITY_CATALOG) await refresh();
       };
 
       const inputControl = document.createElement('span');

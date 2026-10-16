@@ -6,10 +6,6 @@
     "url": "https://raw.githubusercontent.com/jadehawk/PluginHub.crosspoint-plugin/main/catalog.json",
     "lists": [
       {
-        "title": "Official Plugins",
-        "url": "https://raw.githubusercontent.com/jadehawk/PluginHub.crosspoint-plugin/main/official-catalog.json"
-      },
-      {
         "title": "Community Plugins",
         "url": "https://raw.githubusercontent.com/jadehawk/PluginHub.crosspoint-plugin/main/community-catalog.json",
         "notice": {
