@@ -14,12 +14,6 @@ CrossPoint.registerPlugin(async (container, api) => {
     'https://raw.githubusercontent.com/crosspoint-reader/crosspoint-plugin-hub/main/catalog.json';
   const COMMUNITY_CATALOG =
     'https://raw.githubusercontent.com/crosspoint-reader/crosspoint-plugin-hub/main/community-catalog.json';
-  const RETIRED_CATALOGS = new Set([
-    'https://raw.githubusercontent.com/crosspoint-reader/crosspoint-plugin-hub/main/official-catalog.json',
-    'https://raw.githubusercontent.com/jadehawk/PluginHub.crosspoint-plugin/main/catalog.json',
-    'https://raw.githubusercontent.com/jadehawk/PluginHub.crosspoint-plugin/main/community-catalog.json',
-    'https://raw.githubusercontent.com/jadehawk/PluginHub.crosspoint-plugin/main/official-catalog.json'
-  ]);
   const LIST_INDEX_URL =
     'https://raw.githubusercontent.com/crosspoint-reader/crosspoint-plugin-hub/main/catalog-lists.json';
 
@@ -88,7 +82,6 @@ CrossPoint.registerPlugin(async (container, api) => {
     return (
       url === UNION_CATALOG ||
       url === COMMUNITY_CATALOG ||
-      RETIRED_CATALOGS.has(url) ||
       BUILT_IN_CATALOGS.some((catalog) => catalog.url === url)
     );
   }

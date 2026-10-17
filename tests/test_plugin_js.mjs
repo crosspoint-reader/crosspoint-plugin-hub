@@ -8,16 +8,8 @@ const UNION_CATALOG =
   'https://raw.githubusercontent.com/crosspoint-reader/crosspoint-plugin-hub/main/catalog.json';
 const COMMUNITY_CATALOG =
   'https://raw.githubusercontent.com/crosspoint-reader/crosspoint-plugin-hub/main/community-catalog.json';
-const RETIRED_OFFICIAL_CATALOG =
-  'https://raw.githubusercontent.com/crosspoint-reader/crosspoint-plugin-hub/main/official-catalog.json';
 const LIST_INDEX =
   'https://raw.githubusercontent.com/crosspoint-reader/crosspoint-plugin-hub/main/catalog-lists.json';
-const TRANSFERRED_UNION_CATALOG =
-  'https://raw.githubusercontent.com/jadehawk/PluginHub.crosspoint-plugin/main/catalog.json';
-const TRANSFERRED_COMMUNITY_CATALOG =
-  'https://raw.githubusercontent.com/jadehawk/PluginHub.crosspoint-plugin/main/community-catalog.json';
-const TRANSFERRED_RETIRED_OFFICIAL_CATALOG =
-  'https://raw.githubusercontent.com/jadehawk/PluginHub.crosspoint-plugin/main/official-catalog.json';
 const PRIVATE_CATALOG = 'https://example.test/private/catalog.json';
 
 class Element {
@@ -324,9 +316,8 @@ test('browser hub adopts api.dir while migrating legacy config', async () => {
         return response({
           text: JSON.stringify({
             catalogs: [
-              TRANSFERRED_UNION_CATALOG,
-              TRANSFERRED_RETIRED_OFFICIAL_CATALOG,
-              TRANSFERRED_COMMUNITY_CATALOG,
+              UNION_CATALOG,
+              COMMUNITY_CATALOG,
               PRIVATE_CATALOG,
             ],
           }),

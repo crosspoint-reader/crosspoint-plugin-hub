@@ -339,13 +339,9 @@ Running `python tools/build_catalog.py` performs a live catalog build and may re
 
 ## 12. Plugin Hub release status
 
-Plugin Hub `0.1.6` is staged on `main`.
+Plugin Hub `0.1.6` is the current production Plugin Hub release.
 
-Until `v0.1.6` is intentionally published:
-
-- `stable` remains on Plugin Hub 0.1.5;
-- the latest stable GitHub Release remains `v0.1.5`;
-- firmware bootstrap installs the production stable version;
-- Plugin Hub's own generated Community entry continues to resolve from its latest stable Release.
-
-When `v0.1.6` is published, the stable-promotion workflow advances `stable`, and the next catalog refresh can advertise the new Plugin Hub version.
+- `v0.1.6` is the current stable GitHub Release;
+- the `stable` branch is the production bootstrap pointer and is promoted to the published stable release commit;
+- firmware bootstrap installs Plugin Hub from `stable`;
+- Plugin Hub's generated Community entry resolves from its latest stable Release after catalog refresh.

@@ -5,7 +5,7 @@ Plugin Hub is a CrossPoint SD-card plugin for discovering, installing, updating,
 Plugin Hub currently publishes one user-facing catalog: **Community Plugins**. Valid discovered plugins are published there automatically.
 
 > [!NOTE]
-> The CrossPoint SD-plugin system has not yet shipped in a stable firmware release. Plugin Hub `0.1.6` is staged on `main`; production `stable` and the latest stable Plugin Hub GitHub Release remain `0.1.5` until `v0.1.6` is intentionally published.
+> The CrossPoint SD-plugin system has not yet shipped in a stable firmware release. Plugin Hub `0.1.6` is the current production Plugin Hub release and is published from `crosspoint-reader/crosspoint-plugin-hub`.
 
 ## Documentation
 

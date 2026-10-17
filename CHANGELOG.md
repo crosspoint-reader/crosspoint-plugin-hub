@@ -17,7 +17,7 @@
 - Keep Plugin Hub itself as the intentional root-layout exception so its firmware bootstrap, root catalogs, and production `stable` branch remain unchanged.
 - Add `PLUGIN_HUB_AGENT_GUIDE.md` so developers can hand the publishing workflow directly to an AI coding agent.
 - Consolidate the authoritative publishing, catalog, manifest, capability, and maintainer rules into `PLUGIN_HUB_CONTRACT.md`; keep the README as a project overview instead of a duplicate specification.
-- Move Plugin Hub's canonical repository identity, runtime/catalog URLs, bootstrap source, generated mirrors/details, and self-update endpoint to `crosspoint-reader/crosspoint-plugin-hub` after the repository transfer; retain the previous built-in catalog URLs only as migration aliases for existing configs.
+- Move Plugin Hub's canonical repository identity, runtime/catalog URLs, bootstrap source, generated mirrors/details, and self-update endpoint to `crosspoint-reader/crosspoint-plugin-hub` after the repository transfer, with no pre-release old-repository compatibility layer.
 
 ## 0.1.5
 
