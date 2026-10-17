@@ -463,7 +463,12 @@ def safe_runtime_files(manifest: dict[str, Any], root_names: set[str]) -> list[s
 
 def load_whitelist(path: Path) -> dict[str, Any]:
     if not path.exists():
-        return {"repositories": [], "release_asset_repositories": [], "catalogs": []}
+        return {
+            "repositories": [],
+            "release_asset_repositories": [],
+            "direct_plugins": [],
+            "catalogs": [],
+        }
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
@@ -473,6 +478,7 @@ def load_whitelist(path: Path) -> dict[str, Any]:
 
     repositories = payload.get("repositories", [])
     release_asset_repositories = payload.get("release_asset_repositories", [])
+    direct_plugins = payload.get("direct_plugins", [])
     catalogs = payload.get("catalogs", [])
     if not isinstance(repositories, list) or not all(
         isinstance(item, str) and REPOSITORY_RE.fullmatch(item) for item in repositories
@@ -485,12 +491,17 @@ def load_whitelist(path: Path) -> dict[str, Any]:
         raise CatalogError(
             "whitelist release_asset_repositories must be owner/repository strings"
         )
+    if not isinstance(direct_plugins, list) or not all(
+        isinstance(item, dict) for item in direct_plugins
+    ):
+        raise CatalogError("whitelist direct_plugins must be objects")
     if not isinstance(catalogs, list) or not all(isinstance(item, dict) for item in catalogs):
         raise CatalogError("whitelist catalogs must be objects")
 
     return {
         "repositories": repositories,
         "release_asset_repositories": release_asset_repositories,
+        "direct_plugins": direct_plugins,
         "catalogs": catalogs,
     }
 
@@ -588,6 +599,50 @@ def curated_catalog_plugins(
     seen_ids: set[str] = set()
     blacklisted = blacklisted_repositories or set()
 
+    def normalized_entry(
+        source_entry: dict[str, Any],
+        plugin_id: str,
+        source_catalog: str | None = None,
+    ) -> dict[str, Any]:
+        version_value = source_entry.get("version")
+        base = source_entry.get("base")
+        files_value = source_entry.get("files")
+        if not isinstance(version_value, str) or normalize_version(version_value) is None:
+            raise CatalogError(f"whitelisted plugin {plugin_id!r} has invalid version")
+        if not isinstance(base, str) or not base.startswith(("https://", "http://")):
+            raise CatalogError(f"whitelisted plugin {plugin_id!r} has invalid base")
+        files = safe_runtime_files({"files": files_value}, set())
+        if files is None:
+            raise CatalogError(f"whitelisted plugin {plugin_id!r} has invalid files")
+
+        title = source_entry.get("title")
+        description = source_entry.get("description")
+        author = source_entry.get("author")
+        compatibility = normalize_compatibility(source_entry.get("compatibility"))
+        entry: dict[str, Any] = {
+            "name": plugin_id,
+            "title": title if isinstance(title, str) and title else plugin_id,
+            "description": description if isinstance(description, str) else "",
+            "author": author if isinstance(author, str) else "",
+            "version": normalize_version(version_value),
+        }
+        if source_catalog is not None:
+            entry["source_catalog"] = source_catalog
+        entry["base"] = pin_raw_github_base(client, base)
+        entry["files"] = files
+        if compatibility is not None:
+            entry["compatibility"] = compatibility
+        return entry
+
+    for source_entry in whitelist.get("direct_plugins", []):
+        plugin_id = source_entry.get("name")
+        if not isinstance(plugin_id, str) or PLUGIN_ID_RE.fullmatch(plugin_id) is None:
+            raise CatalogError("whitelist direct plugin ids are invalid")
+        if plugin_id in seen_ids:
+            raise CatalogError(f"duplicate whitelisted plugin id: {plugin_id}")
+        imported.append(normalized_entry(source_entry, plugin_id))
+        seen_ids.add(plugin_id)
+
     for source in whitelist.get("catalogs", []):
         url = source.get("url")
         plugin_ids = source.get("plugins")
@@ -617,35 +672,7 @@ def curated_catalog_plugins(
             source_entry = by_id.get(plugin_id)
             if not isinstance(source_entry, dict):
                 raise CatalogError(f"whitelisted plugin {plugin_id!r} not found in {url}")
-
-            version_value = source_entry.get("version")
-            base = source_entry.get("base")
-            files_value = source_entry.get("files")
-            if not isinstance(version_value, str) or normalize_version(version_value) is None:
-                raise CatalogError(f"whitelisted plugin {plugin_id!r} has invalid version")
-            if not isinstance(base, str) or not base.startswith(("https://", "http://")):
-                raise CatalogError(f"whitelisted plugin {plugin_id!r} has invalid base")
-            files = safe_runtime_files({"files": files_value}, set())
-            if files is None:
-                raise CatalogError(f"whitelisted plugin {plugin_id!r} has invalid files")
-
-            title = source_entry.get("title")
-            description = source_entry.get("description")
-            author = source_entry.get("author")
-            compatibility = normalize_compatibility(source_entry.get("compatibility"))
-            entry = {
-                "name": plugin_id,
-                "title": title if isinstance(title, str) and title else plugin_id,
-                "description": description if isinstance(description, str) else "",
-                "author": author if isinstance(author, str) else "",
-                "version": normalize_version(version_value),
-                "source_catalog": url,
-                "base": pin_raw_github_base(client, base),
-                "files": files,
-            }
-            if compatibility is not None:
-                entry["compatibility"] = compatibility
-            imported.append(entry)
+            imported.append(normalized_entry(source_entry, plugin_id, url))
             seen_ids.add(plugin_id)
 
     imported.sort(key=lambda item: (item["title"].casefold(), item["name"]))

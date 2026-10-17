@@ -199,6 +199,17 @@ It supports:
   "release_asset_repositories": [
     "owner/monorepo"
   ],
+  "direct_plugins": [
+    {
+      "name": "hosted-plugin",
+      "title": "Hosted Plugin",
+      "description": "Plugin hosted outside GitHub.",
+      "author": "Example Author",
+      "version": "1.0.0",
+      "base": "https://plugins.example.org/hosted-plugin/",
+      "files": ["manifest.json", "plugin.js"]
+    }
+  ],
   "catalogs": [
     {
       "url": "https://example.org/catalog.json",
@@ -210,6 +221,7 @@ It supports:
 
 - `repositories`: manually include a standalone repository while still requiring normal Release/manifest validation.
 - `release_asset_repositories`: inspect stable Releases for `*.crosspoint-plugin.zip` assets.
+- `direct_plugins`: directly define a plugin whose canonical payload has no suitable GitHub repository or catalog source. Entries use the normal plugin ID, version, HTTP(S) base, runtime-file, compatibility, and duplicate-ID validation.
 - `catalogs`: import only explicitly named plugin IDs from another catalog.
 
 These paths require maintainer configuration and therefore a Plugin Hub pull request. They should not be used merely to avoid the preferred repository layout.

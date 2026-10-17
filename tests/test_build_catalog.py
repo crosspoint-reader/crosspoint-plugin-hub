@@ -487,6 +487,68 @@ class CatalogBuilderTests(unittest.TestCase):
             },
         )
 
+    def test_direct_whitelist_plugin_is_ingested_without_source_catalog(self):
+        whitelist = {
+            "direct_plugins": [
+                {
+                    "name": "protected-content",
+                    "title": "Protected Content",
+                    "description": "Fulfill protected content from an online provider.",
+                    "author": "Diirge",
+                    "version": "1.0.5",
+                    "base": "https://protected-content-host-production.up.railway.app/",
+                    "files": ["manifest.json", "plugin.js"],
+                }
+            ],
+            "catalogs": [],
+        }
+
+        plugins = build_catalog.curated_catalog_plugins(object(), whitelist)
+
+        self.assertEqual(len(plugins), 1)
+        self.assertEqual(plugins[0]["name"], "protected-content")
+        self.assertEqual(plugins[0]["version"], "1.0.5")
+        self.assertEqual(
+            plugins[0]["base"],
+            "https://protected-content-host-production.up.railway.app/",
+        )
+        self.assertEqual(plugins[0]["files"], ["manifest.json", "plugin.js"])
+        self.assertNotIn("source_catalog", plugins[0])
+
+    def test_direct_and_catalog_whitelist_duplicate_id_is_rejected(self):
+        class CuratedClient:
+            def fetch_json_url(self, url):
+                return {
+                    "plugins": [
+                        {
+                            "name": "protected-content",
+                            "version": "1.0.5",
+                            "base": "https://example.test/protected-content/",
+                            "files": ["manifest.json", "plugin.js"],
+                        }
+                    ]
+                }
+
+        direct = {
+            "name": "protected-content",
+            "title": "Protected Content",
+            "version": "1.0.5",
+            "base": "https://protected-content-host-production.up.railway.app/",
+            "files": ["manifest.json", "plugin.js"],
+        }
+        whitelist = {
+            "direct_plugins": [direct],
+            "catalogs": [
+                {
+                    "url": "https://example.test/catalog.json",
+                    "plugins": ["protected-content"],
+                }
+            ],
+        }
+
+        with self.assertRaises(build_catalog.CatalogError):
+            build_catalog.curated_catalog_plugins(CuratedClient(), whitelist)
+
     def test_duplicate_plugin_id_is_rejected(self):
         first = {
             "name": "example",
@@ -557,6 +619,15 @@ class CatalogBuilderTests(unittest.TestCase):
                     {
                         "repositories": [],
                         "release_asset_repositories": ["readest/readest"],
+                        "direct_plugins": [
+                            {
+                                "name": "protected-content",
+                                "title": "Protected Content",
+                                "version": "1.0.5",
+                                "base": "https://protected-content-host-production.up.railway.app/",
+                                "files": ["manifest.json", "plugin.js"],
+                            }
+                        ],
                         "catalogs": [],
                     }
                 ),
@@ -569,6 +640,7 @@ class CatalogBuilderTests(unittest.TestCase):
             whitelist["release_asset_repositories"],
             ["readest/readest"],
         )
+        self.assertEqual(whitelist["direct_plugins"][0]["name"], "protected-content")
 
     def test_release_asset_repository_uses_latest_stable_release_with_matching_zip(self):
         manifest = {

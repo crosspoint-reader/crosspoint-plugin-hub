@@ -3,6 +3,20 @@
   "release_asset_repositories": [
     "readest/readest"
   ],
+  "direct_plugins": [
+    {
+      "name": "protected-content",
+      "title": "Protected Content",
+      "description": "Fulfill protected content from an online provider.",
+      "author": "Diirge",
+      "version": "1.0.5",
+      "base": "https://protected-content-host-production.up.railway.app/",
+      "files": [
+        "manifest.json",
+        "plugin.js"
+      ]
+    }
+  ],
   "catalogs": [
     {
       "url": "https://raw.githubusercontent.com/itsthisjustin/sd-plugins/main/catalog.json",
@@ -13,7 +27,6 @@
         "monthwallpaper",
         "organize-by-author",
         "plugin-store",
-        "protected-content",
         "wallabag",
         "webdav"
       ]

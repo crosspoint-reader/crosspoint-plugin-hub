@@ -143,8 +143,8 @@ Before declaring the repository ready, verify:
 
 A normal repository that satisfies this contract does not require a Plugin Hub pull request. Plugin Hub's scheduled catalog refresh evaluates it automatically.
 
-## Exceptional repositories
+## Exceptional sources
 
 Do not recommend Plugin Hub whitelist exceptions merely because the developer currently uses an unusual repository layout.
 
-Use an exceptional Plugin Hub ingestion path only when there is a real reason the repository cannot follow the preferred one-plugin-per-repository layout, such as a genuine upstream monorepo that publishes `*.crosspoint-plugin.zip` Release assets or an explicitly curated external catalog. Those paths require Plugin Hub maintainer configuration and are defined in `PLUGIN_HUB_CONTRACT.md`.
+Use an exceptional Plugin Hub ingestion path only when there is a real reason the preferred one-plugin-per-repository flow cannot apply, such as a genuine upstream monorepo that publishes `*.crosspoint-plugin.zip` Release assets, an explicitly curated external catalog, or a canonical payload hosted outside GitHub with no suitable repository/catalog source. The last case belongs in `whitelist.json -> direct_plugins`. These paths require Plugin Hub maintainer configuration and are defined in `PLUGIN_HUB_CONTRACT.md`.
