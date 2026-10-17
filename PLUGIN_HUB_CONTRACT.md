@@ -256,7 +256,7 @@ For configured external catalogs, Plugin Hub imports only the explicitly allowed
 
 Repository matching is case-insensitive. Blacklist rules win over automatic discovery, whitelist entries, release-asset sources, and curated catalogs.
 
-If multiple sources claim the same plugin ID, catalog generation fails rather than silently selecting a winner.
+If multiple sources claim the same plugin ID, that ID is quarantined for the refresh rather than silently selecting a winner. Non-conflicting plugins continue to publish, and the conflicting sources are recorded in `duplicate-plugin-ids.json` for maintainers to resolve.
 
 ## 7. Generated catalogs
 
@@ -266,6 +266,7 @@ The production refresh workflow generates:
 - `community-catalog.json` — Community catalog while it fits in one response;
 - `community-catalog-<range>.json` — generated alphabetical shards when splitting is required;
 - `catalog-lists.json` — live user-facing named-list index;
+- `duplicate-plugin-ids.json` - duplicate-ID quarantine report; `duplicates` is empty when no conflicts are present;
 - versioned `release-assets/` mirrors for configured release-asset repositories;
 - generated `details/` HTML for plugins that provide supported `DETAILS.md` content.
 
@@ -329,7 +330,7 @@ Custom catalogs remain separate from the built-in Community catalog. They are a 
 2. runs the browser Plugin Hub tests;
 3. builds the catalog with `tools/build_catalog.py`;
 4. applies automatic discovery, whitelist, blacklist, release-asset, and curated-source rules;
-5. rebuilds generated catalogs/details/release mirrors;
+5. rebuilds generated catalogs/details/release mirrors and writes the duplicate-ID quarantine report;
 6. commits generated changes only when content changed.
 
 `tools/build_catalog.py` and `tools/catalog_partitions.py` are production code used by this workflow.

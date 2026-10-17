@@ -50,6 +50,7 @@ RAW_GITHUB_BASE_RE = re.compile(
 )
 RELEASE_ASSET_SUFFIX = ".crosspoint-plugin.zip"
 RELEASE_ASSET_MIRROR_DIR = "release-assets"
+DUPLICATE_REPORT_OUTPUT = "duplicate-plugin-ids.json"
 MAX_RELEASE_ASSET_BYTES = 16 * 1024 * 1024
 MAX_ARCHIVE_MEMBERS = 256
 MAX_ARCHIVE_UNCOMPRESSED_BYTES = 32 * 1024 * 1024
@@ -870,20 +871,62 @@ def mirror_plugin_payload(
     return target
 
 
+def duplicate_source(plugin: dict[str, Any]) -> dict[str, str]:
+    source: dict[str, str] = {}
+    for key in ("repository", "source_catalog", "release", "release_asset", "base", "version", "title"):
+        value = plugin.get(key)
+        if isinstance(value, str) and value:
+            source[key] = value
+    return source
+
+
+def quarantine_duplicate_plugins(
+    plugins: list[dict[str, Any]],
+    duplicate_reports: list[dict[str, Any]] | None = None,
+    scope: str = "catalog",
+) -> list[dict[str, Any]]:
+    candidates: dict[str, list[dict[str, Any]]] = {}
+    for plugin in plugins:
+        candidates.setdefault(plugin["name"], []).append(plugin)
+
+    unique_plugins: list[dict[str, Any]] = []
+    for plugin_id, entries in candidates.items():
+        if len(entries) != 1:
+            sources = [duplicate_source(entry) for entry in entries]
+            sources.sort(key=lambda item: json.dumps(item, sort_keys=True))
+            if duplicate_reports is not None:
+                duplicate_reports.append(
+                    {
+                        "plugin_id": plugin_id,
+                        "scope": scope,
+                        "sources": sources,
+                    }
+                )
+            print(
+                f"skip duplicate plugin id {plugin_id!r} across {len(entries)} sources ({scope})",
+                file=sys.stderr,
+            )
+            continue
+        unique_plugins.append(entries[0])
+
+    unique_plugins.sort(key=lambda item: (item["title"].casefold(), item["name"]))
+    return unique_plugins
+
+
 def release_asset_plugins(
     client: GitHubClient,
     repositories: list[str],
     catalog_repository: str,
     mirror_root: Path,
     blacklisted_repositories: set[str] | None = None,
+    duplicate_reports: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     if not repositories:
         return []
     if REPOSITORY_RE.fullmatch(catalog_repository) is None:
         raise CatalogError("catalog repository must be an owner/repository string")
 
-    plugins: list[dict[str, Any]] = []
-    seen_ids: set[str] = set()
+    candidates: list[dict[str, Any]] = []
     blacklisted = blacklisted_repositories or set()
     for full_name in repositories:
         if is_blacklisted_repository(full_name, blacklisted):
@@ -923,19 +966,13 @@ def release_asset_plugins(
             plugin_id = manifest["name"]
             version = normalize_version(manifest["version"])
             assert version is not None
-            if plugin_id in seen_ids:
-                raise CatalogError(
-                    f"duplicate plugin id {plugin_id!r} across configured release assets"
-                )
-            seen_ids.add(plugin_id)
 
-            mirror_plugin_payload(mirror_root, plugin_id, version, payloads)
             mirror_rel = f"{RELEASE_ASSET_MIRROR_DIR}/{plugin_id}/{version}/"
             title = manifest.get("title")
             description = manifest.get("description")
             author = manifest.get("author")
             compatibility = normalize_compatibility(manifest.get("compatibility"))
-            entry = {
+            entry: dict[str, Any] = {
                 "name": plugin_id,
                 "title": title if isinstance(title, str) and title else plugin_id,
                 "description": (
@@ -959,6 +996,7 @@ def release_asset_plugins(
                     f"{urllib.parse.quote(mirror_rel, safe='/')}"
                 ),
                 "files": files,
+                "_mirror_payloads": payloads,
             }
             if compatibility is not None:
                 entry["compatibility"] = compatibility
@@ -975,9 +1013,18 @@ def release_asset_plugins(
                         raise CatalogError(
                             f"{full_name} asset {asset_name!r} DETAILS.md is not valid UTF-8"
                         ) from exc
-            plugins.append(entry)
+            candidates.append(entry)
 
-    plugins.sort(key=lambda item: (item["title"].casefold(), item["name"]))
+    plugins = quarantine_duplicate_plugins(candidates, duplicate_reports, "release-assets")
+    for entry in plugins:
+        payloads = entry.pop("_mirror_payloads")
+        assert isinstance(payloads, dict)
+        mirror_plugin_payload(
+            mirror_root,
+            entry["name"],
+            entry["version"],
+            payloads,
+        )
     return plugins
 
 
@@ -985,19 +1032,13 @@ def merge_plugins(
     release_plugins: list[dict[str, Any]],
     curated_plugins: list[dict[str, Any]],
     asset_plugins: list[dict[str, Any]],
+    duplicate_reports: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
-    candidates: dict[str, list[dict[str, Any]]] = {}
-    for plugin in [*curated_plugins, *release_plugins, *asset_plugins]:
-        candidates.setdefault(plugin["name"], []).append(plugin)
-
-    plugins: list[dict[str, Any]] = []
-    for plugin_id, entries in candidates.items():
-        if len(entries) != 1:
-            raise CatalogError(f"duplicate plugin id {plugin_id!r} across {len(entries)} sources")
-        plugins.append(entries[0])
-
-    plugins.sort(key=lambda item: (item["title"].casefold(), item["name"]))
-    return plugins
+    return quarantine_duplicate_plugins(
+        [*curated_plugins, *release_plugins, *asset_plugins],
+        duplicate_reports,
+        "catalog-sources",
+    )
 
 
 def build_entry(
@@ -1194,6 +1235,19 @@ def load_existing(path: Path) -> dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
+def write_duplicate_report(path: Path, duplicate_reports: list[dict[str, Any]]) -> bool:
+    duplicates = sorted(
+        duplicate_reports,
+        key=lambda item: (item["plugin_id"], item["scope"]),
+    )
+    rendered = compact_json({"schema_version": 1, "duplicates": duplicates})
+    previous = path.read_text(encoding="utf-8") if path.exists() else None
+    if previous == rendered:
+        return False
+    path.write_text(rendered, encoding="utf-8", newline="\n")
+    return True
+
+
 def write_catalog(
     path: Path,
     plugins: list[dict[str, Any]],
@@ -1279,6 +1333,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--community-max-bytes", type=int, default=COMMUNITY_CATALOG_MAX_BYTES, help="maximum serialized bytes per Community catalog shard")
     parser.add_argument("--whitelist", default="whitelist.json", help="curated plugin whitelist")
     parser.add_argument("--blacklist", default="blacklist.json", help="repositories omitted from all generated catalogs")
+    parser.add_argument("--duplicates-output", default=DUPLICATE_REPORT_OUTPUT, help="duplicate plugin ID report path")
     parser.add_argument(
         "--exclude-repository",
         default=None,
@@ -1297,6 +1352,7 @@ def main() -> int:
     args = parse_args()
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
     client = GitHubClient(token)
+    duplicate_reports: list[dict[str, Any]] = []
     try:
         whitelist = load_whitelist(Path(args.whitelist))
         blacklist = load_blacklist(Path(args.blacklist))
@@ -1317,9 +1373,15 @@ def main() -> int:
             args.catalog_repository,
             Path(RELEASE_ASSET_MIRROR_DIR),
             blacklisted_repositories,
+            duplicate_reports,
         )
         curated_plugins = curated_catalog_plugins(client, whitelist, blacklisted_repositories)
-        plugins = merge_plugins(release_plugins, curated_plugins, asset_plugins)
+        plugins = merge_plugins(
+            release_plugins,
+            curated_plugins,
+            asset_plugins,
+            duplicate_reports,
+        )
         plugins = [plugin for plugin in plugins if not plugin_entry_is_blacklisted(plugin, blacklisted_repositories)]
         details_changed = publish_details_assets(
             plugins,
@@ -1333,6 +1395,7 @@ def main() -> int:
 
     changes = {
         "details": details_changed,
+        "duplicates": write_duplicate_report(Path(args.duplicates_output), duplicate_reports),
         "compatibility": write_catalog(Path(args.output), plugins, "Plugin Hub"),
     }
     try:
@@ -1354,7 +1417,7 @@ def main() -> int:
         f"catalogs {'updated: ' + ', '.join(changed_names) if changed_names else 'unchanged'}; "
         f"{len(plugins)} community plugins "
         f"({len(release_plugins)} release-discovered, {len(asset_plugins)} release-asset, "
-        f"{len(curated_plugins)} curated)"
+        f"{len(curated_plugins)} curated, {len(duplicate_reports)} duplicate IDs quarantined)"
     )
     return 0
 

@@ -15,19 +15,6 @@
         "manifest.json",
         "plugin.js"
       ]
-    },
-    {
-      "name": "monthwallpaper",
-      "title": "Month Wallpaper",
-      "description": "Download a month-calendar sleep wallpaper from Month Wallpaper server.",
-      "author": "marczykm",
-      "version": "1.0.0",
-      "base": "https://raw.githubusercontent.com/marczykm/month-wallpaper-crosspoint-plugin/refs/heads/main/",
-      "files": [
-        "manifest.json",
-        "device.json",
-        "README.md"
-      ]
     }
   ],
   "catalogs": [

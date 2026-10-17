@@ -549,7 +549,7 @@ class CatalogBuilderTests(unittest.TestCase):
         with self.assertRaises(build_catalog.CatalogError):
             build_catalog.curated_catalog_plugins(CuratedClient(), whitelist)
 
-    def test_duplicate_plugin_id_is_rejected(self):
+    def test_duplicate_plugin_id_is_quarantined_without_blocking_other_plugins(self):
         first = {
             "name": "example",
             "title": "Example",
@@ -562,9 +562,29 @@ class CatalogBuilderTests(unittest.TestCase):
             "version": "2.0.0",
             "repository": "owner/two",
         }
+        unique = {
+            "name": "unique",
+            "title": "Unique",
+            "version": "1.0.0",
+            "repository": "owner/unique",
+        }
+        duplicate_reports = []
 
-        with self.assertRaises(build_catalog.CatalogError):
-            build_catalog.merge_plugins([first, second], [], [])
+        plugins = build_catalog.merge_plugins(
+            [first, second, unique],
+            [],
+            [],
+            duplicate_reports,
+        )
+
+        self.assertEqual([plugin["name"] for plugin in plugins], ["unique"])
+        self.assertEqual(len(duplicate_reports), 1)
+        self.assertEqual(duplicate_reports[0]["plugin_id"], "example")
+        self.assertEqual(duplicate_reports[0]["scope"], "catalog-sources")
+        self.assertEqual(
+            [source["repository"] for source in duplicate_reports[0]["sources"]],
+            ["owner/one", "owner/two"],
+        )
 
     def test_discovery_preserves_duplicate_ids_for_collision_check(self):
         class DuplicateDiscoveryClient:
@@ -608,8 +628,10 @@ class CatalogBuilderTests(unittest.TestCase):
 
         self.assertEqual(len(discovered), 2)
         self.assertEqual([item["name"] for item in discovered], ["duplicate-id", "duplicate-id"])
-        with self.assertRaises(build_catalog.CatalogError):
-            build_catalog.merge_plugins(discovered, [], [])
+        duplicate_reports = []
+        plugins = build_catalog.merge_plugins(discovered, [], [], duplicate_reports)
+        self.assertEqual(plugins, [])
+        self.assertEqual(duplicate_reports[0]["plugin_id"], "duplicate-id")
 
     def test_load_whitelist_accepts_manual_release_asset_repository_names(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -748,6 +770,61 @@ class CatalogBuilderTests(unittest.TestCase):
         self.assertEqual([plugin["version"] for plugin in plugins], ["1.0.0", "2.0.0"])
         self.assertTrue(all(plugin["release"] == "v9.9.9" for plugin in plugins))
 
+    def test_release_asset_duplicate_ids_are_quarantined_before_mirroring(self):
+        first_manifest = {
+            "name": "duplicate-plugin",
+            "version": "1.0.0",
+            "files": ["manifest.json", "device.json"],
+        }
+        second_manifest = {
+            "name": "duplicate-plugin",
+            "version": "2.0.0",
+            "files": ["manifest.json", "plugin.js"],
+        }
+        releases = [
+            {
+                "tag_name": "v9.9.9",
+                "assets": [
+                    {
+                        "name": "First.crosspoint-plugin.zip",
+                        "browser_download_url": "memory://first",
+                    },
+                    {
+                        "name": "Second.crosspoint-plugin.zip",
+                        "browser_download_url": "memory://second",
+                    },
+                ],
+            }
+        ]
+        client = ReleaseAssetClient(
+            releases,
+            {
+                "memory://first": plugin_zip(first_manifest),
+                "memory://second": plugin_zip(second_manifest),
+            },
+        )
+        duplicate_reports = []
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            mirror_root = Path(temp_dir) / "release-assets"
+            plugins = build_catalog.release_asset_plugins(
+                client,
+                ["owner/monorepo"],
+                "crosspoint-reader/crosspoint-plugin-hub",
+                mirror_root,
+                duplicate_reports=duplicate_reports,
+            )
+            self.assertFalse(mirror_root.exists())
+
+        self.assertEqual(plugins, [])
+        self.assertEqual(len(duplicate_reports), 1)
+        self.assertEqual(duplicate_reports[0]["plugin_id"], "duplicate-plugin")
+        self.assertEqual(duplicate_reports[0]["scope"], "release-assets")
+        self.assertEqual(
+            [source["release_asset"] for source in duplicate_reports[0]["sources"]],
+            ["First.crosspoint-plugin.zip", "Second.crosspoint-plugin.zip"],
+        )
+
     def test_release_asset_rejects_unsafe_archive_paths(self):
         manifest = {
             "name": "unsafe",
@@ -884,6 +961,30 @@ class CatalogBuilderTests(unittest.TestCase):
 
         with self.assertRaises(build_catalog.GitHubRateLimitError):
             build_catalog.discover_plugins(RateLimitedClient())
+
+    def test_write_duplicate_report_is_deterministic_and_clears_resolved_duplicates(self):
+        duplicate_reports = [
+            {
+                "plugin_id": "example",
+                "scope": "catalog-sources",
+                "sources": [
+                    {"repository": "owner/two", "version": "2.0.0"},
+                    {"repository": "owner/one", "version": "1.0.0"},
+                ],
+            }
+        ]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "duplicate-plugin-ids.json"
+            self.assertTrue(build_catalog.write_duplicate_report(path, duplicate_reports))
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(payload["schema_version"], 1)
+            self.assertEqual(payload["duplicates"][0]["plugin_id"], "example")
+            self.assertFalse(build_catalog.write_duplicate_report(path, duplicate_reports))
+            self.assertTrue(build_catalog.write_duplicate_report(path, []))
+            self.assertEqual(
+                json.loads(path.read_text(encoding="utf-8")),
+                {"schema_version": 1, "duplicates": []},
+            )
 
     def test_write_catalog_does_not_churn_timestamp_when_plugins_are_unchanged(self):
         plugins = [{"name": "example", "title": "Example"}]
