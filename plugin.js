@@ -9,16 +9,19 @@ CrossPoint.registerPlugin(async (container, api) => {
   const CONFIG_PATH = PLUGIN_DIR ? PLUGIN_DIR + '/config.json' : LEGACY_CONFIG_PATH;
   const PLUGIN_ROOTS = ['/.crosspoint/plugins', '/plugins', '/.plugins'];
   const PLUGINS_DIR = PLUGIN_ROOTS[0];
-  const RELEASE_API_URL = 'https://api.github.com/repos/jadehawk/PluginHub.crosspoint-plugin/releases/latest';
-  const LEGACY_CATALOG =
-    'https://raw.githubusercontent.com/jadehawk/PluginHub.crosspoint-plugin/main/catalog.json';
+  const RELEASE_API_URL = 'https://api.github.com/repos/crosspoint-reader/crosspoint-plugin-hub/releases/latest';
+  const UNION_CATALOG =
+    'https://raw.githubusercontent.com/crosspoint-reader/crosspoint-plugin-hub/main/catalog.json';
   const COMMUNITY_CATALOG =
-    'https://raw.githubusercontent.com/jadehawk/PluginHub.crosspoint-plugin/main/community-catalog.json';
+    'https://raw.githubusercontent.com/crosspoint-reader/crosspoint-plugin-hub/main/community-catalog.json';
   const RETIRED_CATALOGS = new Set([
+    'https://raw.githubusercontent.com/crosspoint-reader/crosspoint-plugin-hub/main/official-catalog.json',
+    'https://raw.githubusercontent.com/jadehawk/PluginHub.crosspoint-plugin/main/catalog.json',
+    'https://raw.githubusercontent.com/jadehawk/PluginHub.crosspoint-plugin/main/community-catalog.json',
     'https://raw.githubusercontent.com/jadehawk/PluginHub.crosspoint-plugin/main/official-catalog.json'
   ]);
   const LIST_INDEX_URL =
-    'https://raw.githubusercontent.com/jadehawk/PluginHub.crosspoint-plugin/main/catalog-lists.json';
+    'https://raw.githubusercontent.com/crosspoint-reader/crosspoint-plugin-hub/main/catalog-lists.json';
 
   function defaultBuiltInCatalogs() {
     return [
@@ -83,7 +86,7 @@ CrossPoint.registerPlugin(async (container, api) => {
 
   function isReservedCatalog(url) {
     return (
-      url === LEGACY_CATALOG ||
+      url === UNION_CATALOG ||
       url === COMMUNITY_CATALOG ||
       RETIRED_CATALOGS.has(url) ||
       BUILT_IN_CATALOGS.some((catalog) => catalog.url === url)

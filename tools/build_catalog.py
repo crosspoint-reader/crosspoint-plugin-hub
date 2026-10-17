@@ -41,7 +41,7 @@ DETAILS_OUTPUT_DIR = "details"
 MAX_DETAILS_SOURCE_BYTES = 16 * 1024
 MAX_DETAILS_HTML_BYTES = 24 * 1024
 PLUGIN_DIRECTORY_SUFFIX = ".crosspoint-plugin"
-ROOT_LAYOUT_EXCEPTIONS = {"jadehawk/pluginhub.crosspoint-plugin"}
+ROOT_LAYOUT_EXCEPTIONS = {"crosspoint-reader/crosspoint-plugin-hub"}
 VERSION_RE = re.compile(r"^[vV]?(\d+\.\d+\.\d+)$")
 PLUGIN_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 REPOSITORY_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
@@ -76,7 +76,7 @@ class GitHubClient:
             url += "?" + urllib.parse.urlencode(params)
         headers = {
             "Accept": "application/vnd.github+json",
-            "User-Agent": "PluginHub.crosspoint-plugin catalog builder",
+            "User-Agent": "crosspoint-plugin-hub catalog builder",
             "X-GitHub-Api-Version": "2022-11-28",
         }
         if self.token:
@@ -210,7 +210,7 @@ class GitHubClient:
     def fetch_json_url(self, url: str) -> dict[str, Any]:
         headers = {
             "Accept": "application/json",
-            "User-Agent": "PluginHub.crosspoint-plugin catalog builder",
+            "User-Agent": "crosspoint-plugin-hub catalog builder",
         }
         request = urllib.request.Request(url, headers=headers)
         try:
@@ -230,7 +230,7 @@ class GitHubClient:
     def fetch_bytes_url(self, url: str, max_bytes: int = MAX_RELEASE_ASSET_BYTES) -> bytes:
         headers = {
             "Accept": "application/octet-stream",
-            "User-Agent": "PluginHub.crosspoint-plugin catalog builder",
+            "User-Agent": "crosspoint-plugin-hub catalog builder",
         }
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
@@ -1259,7 +1259,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--catalog-repository",
-        default=os.environ.get("GITHUB_REPOSITORY", "jadehawk/PluginHub.crosspoint-plugin"),
+        default=os.environ.get("GITHUB_REPOSITORY", "crosspoint-reader/crosspoint-plugin-hub"),
         help="owner/repository used for generated release-asset mirror URLs",
     )
     parser.add_argument("--max-repositories", type=int, default=None, help="optional accepted-plugin limit for testing")

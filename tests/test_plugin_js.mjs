@@ -4,14 +4,20 @@ import test from 'node:test';
 import vm from 'node:vm';
 
 const root = new URL('../', import.meta.url);
-const LEGACY_CATALOG =
-  'https://raw.githubusercontent.com/jadehawk/PluginHub.crosspoint-plugin/main/catalog.json';
+const UNION_CATALOG =
+  'https://raw.githubusercontent.com/crosspoint-reader/crosspoint-plugin-hub/main/catalog.json';
 const COMMUNITY_CATALOG =
-  'https://raw.githubusercontent.com/jadehawk/PluginHub.crosspoint-plugin/main/community-catalog.json';
+  'https://raw.githubusercontent.com/crosspoint-reader/crosspoint-plugin-hub/main/community-catalog.json';
 const RETIRED_OFFICIAL_CATALOG =
-  'https://raw.githubusercontent.com/jadehawk/PluginHub.crosspoint-plugin/main/official-catalog.json';
+  'https://raw.githubusercontent.com/crosspoint-reader/crosspoint-plugin-hub/main/official-catalog.json';
 const LIST_INDEX =
-  'https://raw.githubusercontent.com/jadehawk/PluginHub.crosspoint-plugin/main/catalog-lists.json';
+  'https://raw.githubusercontent.com/crosspoint-reader/crosspoint-plugin-hub/main/catalog-lists.json';
+const TRANSFERRED_UNION_CATALOG =
+  'https://raw.githubusercontent.com/jadehawk/PluginHub.crosspoint-plugin/main/catalog.json';
+const TRANSFERRED_COMMUNITY_CATALOG =
+  'https://raw.githubusercontent.com/jadehawk/PluginHub.crosspoint-plugin/main/community-catalog.json';
+const TRANSFERRED_RETIRED_OFFICIAL_CATALOG =
+  'https://raw.githubusercontent.com/jadehawk/PluginHub.crosspoint-plugin/main/official-catalog.json';
 const PRIVATE_CATALOG = 'https://example.test/private/catalog.json';
 
 class Element {
@@ -226,7 +232,7 @@ test('browser hub loads custom catalogs and only offers directional updates', as
           }),
         };
       }
-      if (url.includes('/repos/jadehawk/PluginHub.crosspoint-plugin/releases/latest')) {
+      if (url.includes('/repos/crosspoint-reader/crosspoint-plugin-hub/releases/latest')) {
         return { status: 200, body: JSON.stringify({ tag_name: 'v0.1.1' }) };
       }
       if (url === COMMUNITY_CATALOG) {
@@ -248,7 +254,7 @@ test('browser hub loads custom catalogs and only offers directional updates', as
 
   assert.equal(relayCalls.length, 3);
   assert.equal(relayCalls[0], LIST_INDEX);
-  assert.match(relayCalls[1], /PluginHub\.crosspoint-plugin\/releases\/latest$/);
+  assert.match(relayCalls[1], /crosspoint-plugin-hub\/releases\/latest$/);
   assert.deepEqual(relayCalls.slice(2), [COMMUNITY_CATALOG]);
   assert.equal(document.elements['ph-version'].textContent, 'Version: v0.1.1');
 
@@ -293,7 +299,7 @@ test('browser hub loads custom catalogs and only offers directional updates', as
   assert.equal(cards[0].children[1].children[0].textContent, 'Install');
 
   const selectedPrivateInput = document.elements['ph-custom-catalogs'].children[0].children[0].children[0];
-  selectedPrivateInput.value = LEGACY_CATALOG;
+  selectedPrivateInput.value = UNION_CATALOG;
   selectedPrivateInput.oninput();
   await document.elements['ph-refresh'].onclick();
   assert.deepEqual(JSON.parse(writes.at(-1).data), { extraCatalogs: [] });
@@ -318,9 +324,9 @@ test('browser hub adopts api.dir while migrating legacy config', async () => {
         return response({
           text: JSON.stringify({
             catalogs: [
-              LEGACY_CATALOG,
-              RETIRED_OFFICIAL_CATALOG,
-              COMMUNITY_CATALOG,
+              TRANSFERRED_UNION_CATALOG,
+              TRANSFERRED_RETIRED_OFFICIAL_CATALOG,
+              TRANSFERRED_COMMUNITY_CATALOG,
               PRIVATE_CATALOG,
             ],
           }),
@@ -359,7 +365,7 @@ test('browser hub adopts api.dir while migrating legacy config', async () => {
           }),
         };
       }
-      if (url.includes('/repos/jadehawk/PluginHub.crosspoint-plugin/releases/latest')) {
+      if (url.includes('/repos/crosspoint-reader/crosspoint-plugin-hub/releases/latest')) {
         return { status: 200, body: JSON.stringify({ tag_name: 'v0.1.4' }) };
       }
       if (url === COMMUNITY_CATALOG) {
@@ -424,7 +430,7 @@ test('browser hub falls back to built-in catalog URLs when list index is unavail
       if (url === LIST_INDEX) {
         return { status: 503, error: 'index unavailable' };
       }
-      if (url.includes('/repos/jadehawk/PluginHub.crosspoint-plugin/releases/latest')) {
+      if (url.includes('/repos/crosspoint-reader/crosspoint-plugin-hub/releases/latest')) {
         return { status: 200, body: JSON.stringify({ tag_name: 'v0.1.6' }) };
       }
       if (url === COMMUNITY_CATALOG) {
@@ -509,7 +515,7 @@ test('browser hub preserves alternate plugin root for updates and removal', asyn
           }),
         };
       }
-      if (url.includes('/repos/jadehawk/PluginHub.crosspoint-plugin/releases/latest')) {
+      if (url.includes('/repos/crosspoint-reader/crosspoint-plugin-hub/releases/latest')) {
         return { status: 200, body: JSON.stringify({ tag_name: 'v0.1.6' }) };
       }
       if (url === COMMUNITY_CATALOG) {

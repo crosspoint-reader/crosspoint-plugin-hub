@@ -3,7 +3,7 @@
   "description": "Discover, install, and update CrossPoint plugins.",
   "browse": {
     "format": "json",
-    "url": "https://raw.githubusercontent.com/jadehawk/PluginHub.crosspoint-plugin/main/catalog.json",
+    "url": "https://raw.githubusercontent.com/crosspoint-reader/crosspoint-plugin-hub/main/catalog.json",
     "items": "plugins",
     "page_size": 16,
     "fields": {
@@ -17,7 +17,7 @@
       "details_url": "details.url",
       "details_format": "details.format"
     },
-    "lists_url": "https://raw.githubusercontent.com/jadehawk/PluginHub.crosspoint-plugin/main/catalog-lists.json",
+    "lists_url": "https://raw.githubusercontent.com/crosspoint-reader/crosspoint-plugin-hub/main/catalog-lists.json",
     "compatibility": {
       "firmware_family": "compatibility.firmware_family",
       "plugin_api_min": "compatibility.plugin_api_min",

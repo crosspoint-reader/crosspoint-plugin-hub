@@ -121,8 +121,8 @@ class CatalogBuilderTests(unittest.TestCase):
 
     def test_plugin_id_falls_back_to_repo_name(self):
         self.assertEqual(
-            build_catalog.derive_plugin_id("PluginHub.crosspoint-plugin", {}),
-            "pluginhub",
+            build_catalog.derive_plugin_id("Example.crosspoint-plugin", {}),
+            "example",
         )
         self.assertEqual(
             build_catalog.derive_plugin_id("Month-Wallpaper.crosspoint-plugin", {}),
@@ -277,7 +277,7 @@ class CatalogBuilderTests(unittest.TestCase):
             changed = build_catalog.publish_details_assets(
                 [plugin],
                 output,
-                "jadehawk/PluginHub.crosspoint-plugin",
+                "crosspoint-reader/crosspoint-plugin-hub",
                 "main",
             )
 
@@ -286,7 +286,7 @@ class CatalogBuilderTests(unittest.TestCase):
             self.assertEqual(
                 plugin["details"],
                 {
-                    "url": "https://raw.githubusercontent.com/jadehawk/PluginHub.crosspoint-plugin/main/details/example/1.2.3.html",
+                    "url": "https://raw.githubusercontent.com/crosspoint-reader/crosspoint-plugin-hub/main/details/example/1.2.3.html",
                     "format": "html",
                 },
             )
@@ -302,7 +302,7 @@ class CatalogBuilderTests(unittest.TestCase):
                         }
                     ],
                     output,
-                    "jadehawk/PluginHub.crosspoint-plugin",
+                    "crosspoint-reader/crosspoint-plugin-hub",
                     "main",
                 )
 
@@ -351,10 +351,10 @@ class CatalogBuilderTests(unittest.TestCase):
                 {"name": "README.md", "type": "file"},
             ],
         )
-        repo = {"full_name": "jadehawk/PluginHub.crosspoint-plugin", "name": "PluginHub.crosspoint-plugin", "owner": {"login": "jadehawk"}}
+        repo = {"full_name": "crosspoint-reader/crosspoint-plugin-hub", "name": "crosspoint-plugin-hub", "owner": {"login": "crosspoint-reader"}}
         entry = build_catalog.build_entry(client, repo, {"tag_name": "v0.1.6"})
         self.assertIsNotNone(entry)
-        self.assertEqual(entry["base"], "https://raw.githubusercontent.com/jadehawk/PluginHub.crosspoint-plugin/v0.1.6/")
+        self.assertEqual(entry["base"], "https://raw.githubusercontent.com/crosspoint-reader/crosspoint-plugin-hub/v0.1.6/")
 
     def test_build_entry_rejects_folder_manifest_id_mismatch(self):
         client = FakeClient(
@@ -606,7 +606,7 @@ class CatalogBuilderTests(unittest.TestCase):
             plugins = build_catalog.release_asset_plugins(
                 client,
                 ["readest/readest"],
-                "jadehawk/PluginHub.crosspoint-plugin",
+                "crosspoint-reader/crosspoint-plugin-hub",
                 mirror_root,
             )
             mirrored_manifest = mirror_root / "readest" / "0.12.10" / "manifest.json"
@@ -623,7 +623,7 @@ class CatalogBuilderTests(unittest.TestCase):
         )
         self.assertEqual(
             plugins[0]["base"],
-            "https://raw.githubusercontent.com/jadehawk/PluginHub.crosspoint-plugin/main/release-assets/readest/0.12.10/",
+            "https://raw.githubusercontent.com/crosspoint-reader/crosspoint-plugin-hub/main/release-assets/readest/0.12.10/",
         )
         self.assertEqual(
             plugins[0]["compatibility"],
@@ -668,7 +668,7 @@ class CatalogBuilderTests(unittest.TestCase):
             plugins = build_catalog.release_asset_plugins(
                 client,
                 ["owner/monorepo"],
-                "jadehawk/PluginHub.crosspoint-plugin",
+                "crosspoint-reader/crosspoint-plugin-hub",
                 Path(temp_dir) / "release-assets",
             )
 
@@ -725,7 +725,7 @@ class CatalogBuilderTests(unittest.TestCase):
                 build_catalog.release_asset_plugins(
                     client,
                     ["owner/monorepo"],
-                    "jadehawk/PluginHub.crosspoint-plugin",
+                    "crosspoint-reader/crosspoint-plugin-hub",
                     Path(temp_dir) / "release-assets",
                 )
 
@@ -760,7 +760,7 @@ class CatalogBuilderTests(unittest.TestCase):
             plugins = build_catalog.release_asset_plugins(
                 BlacklistedAssetClient(),
                 ["owner/blocked"],
-                "jadehawk/PluginHub.crosspoint-plugin",
+                "crosspoint-reader/crosspoint-plugin-hub",
                 Path(temp_dir) / "release-assets",
                 {"owner/blocked"},
             )
@@ -899,7 +899,7 @@ class CatalogBuilderTests(unittest.TestCase):
         partitions = build_catalog.partition_community_plugins(plugins, int(full_size * 0.60))
 
         entries = build_catalog.list_index_entries(
-            "jadehawk/PluginHub.crosspoint-plugin",
+            "crosspoint-reader/crosspoint-plugin-hub",
             "main",
             "community-catalog.json",
             partitions,
@@ -926,7 +926,7 @@ class CatalogBuilderTests(unittest.TestCase):
                 community,
                 index,
                 plugins,
-                "jadehawk/PluginHub.crosspoint-plugin",
+                "crosspoint-reader/crosspoint-plugin-hub",
                 "main",
                 int(full_size * 0.60),
             )
