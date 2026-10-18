@@ -21,8 +21,7 @@
     {
       "url": "https://raw.githubusercontent.com/itsthisjustin/sd-plugins/main/catalog.json",
       "plugins": [
-        "hello",
-        "plugin-store"
+        "hello"
       ]
     }
   ]
