@@ -21,13 +21,9 @@
     {
       "url": "https://raw.githubusercontent.com/itsthisjustin/sd-plugins/main/catalog.json",
       "plugins": [
-        "bookfusion",
         "dictionaries",
         "hello",
-        "organize-by-author",
-        "plugin-store",
-        "wallabag",
-        "webdav"
+        "plugin-store"
       ]
     }
   ]
