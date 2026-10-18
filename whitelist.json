@@ -21,7 +21,6 @@
     {
       "url": "https://raw.githubusercontent.com/itsthisjustin/sd-plugins/main/catalog.json",
       "plugins": [
-        "dictionaries",
         "hello",
         "plugin-store"
       ]
