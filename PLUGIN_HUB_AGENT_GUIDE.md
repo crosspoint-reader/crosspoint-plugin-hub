@@ -4,6 +4,16 @@ Use this document when asking an AI coding agent to make a CrossPoint plugin rep
 
 `PLUGIN_HUB_CONTRACT.md` is authoritative. This guide explains the preferred workflow for producing a maintainable repository that conforms to that contract without changing runtime behavior unnecessarily.
 
+## Understand the two contracts first
+
+CrossPoint firmware can load a manually sideloaded plugin with a browser `plugin.js`, an on-reader `device.json`, or both, without requiring a GitHub repository, release, GitHub topic, or even a manifest. **The repository layout, manifest metadata, explicit installed-file list, and stable-release rules below are Plugin Hub automatic-discovery requirements**, not universal firmware-loader requirements. See [the publishing contract](PLUGIN_HUB_CONTRACT.md) and [upstream SD-plugin docs](https://github.com/itsthisjustin/sd-plugins).
+
+For browser plugins, use the actual firmware-provided `CrossPoint.registerPlugin` API. Available interfaces include `api.relay`, `api.fetchToSd`, `api.writeFile`, `api.pluginFile`, `api.registerAction`, and `api.crypto`; File Manager plugins may also access same-origin file endpoints. Check the [upstream reference](https://github.com/itsthisjustin/sd-plugins/blob/main/.claude/skills/create-plugin/reference.md) for supported shapes and limits: relay response bodies are limited (about 32 KB), relay/fetch do not automatically follow redirects, and `writeFile` is intended for small files.
+
+**Security:** browser plugin JavaScript runs in the device WebUI, not a sandbox, with access to sensitive same-origin device functionality. Review source, do not publish credentials/tokens, and warn users when configuration secrets are persisted on the SD card.
+
+An upstream multi-plugin `catalog.json` is a distribution index, not the same thing as the firmware manifest. In our standalone-repository model, Plugin Hub uses the payload manifest and immutable GitHub Release to generate catalog entries automatically. The generated catalog's remote `base` URL does not belong in the installed plugin manifest.
+
 ## Goal
 
 Produce a repository that is easy to maintain, easy to release, and automatically discoverable by Plugin Hub.

@@ -4,6 +4,22 @@ This document is the authoritative contract for publishing plugins through Plugi
 
 The SD-plugin system has not yet shipped in a stable CrossPoint release. This document therefore defines one current contract. It does not describe legacy plugin-system generations or require compatibility with an older released plugin API.
 
+## Firmware support versus Plugin Hub publishing
+
+**Firmware support:** CrossPoint can load manually installed plugins from `/.crosspoint/plugins/<name>/`, `/plugins/<name>/`, or `/.plugins/<name>/`. A plugin may include `plugin.js` for the browser WebUI, `device.json` for on-reader browsing, or both. The firmware does not require a GitHub repository, a Release, a GitHub topic, or even a manifest for basic manual installation.
+
+**Plugin Hub publishing:** Automatic discovery adds separate rules for reproducible installation and updates: the public repository, one direct-child payload folder, valid manifest and metadata, and an immutable stable GitHub Release. Requirements in the sections below describe **automatic Plugin Hub publication**, not every firmware-loadable plugin. [Upstream SD-plugin documentation](https://github.com/itsthisjustin/sd-plugins) explains the baseline firmware behavior.
+
+### Firmware browser plugin APIs and limitations
+
+A browser `plugin.js` registers with `CrossPoint.registerPlugin((container, api) => { ... })`. Firmware exposes methods such as `api.relay(method, url, headers, body)` for device-mediated HTTP(S), `api.fetchToSd(url, dest, headers)` for SD downloads, `api.writeFile(path, dataB64)` for small file writes, `api.pluginFile(file)` for plugin assets, `api.registerAction(name, fn)` for jobs, and `api.crypto(op, fields)` for supported cryptographic operations. File Manager plugins can use same-origin file-management endpoints where available. Review the [upstream API reference](https://github.com/itsthisjustin/sd-plugins/blob/main/.claude/skills/create-plugin/reference.md) and current firmware before depending on a particular API.
+
+Documented limits include an approximately 32 KB relay response-body cap, no automatic redirect following by relay or fetch, and small request limits for `writeFile`. Browser plugins execute inside the device WebUI, **not in an isolated sandbox**; they can access privileged same-origin functionality. Review third-party code before installing it. Never publish account secrets or tokens with a release, and protect credentials stored on the SD card.
+
+### Manifest versus distribution catalog
+
+The firmware manifest describes the installed plugin (including its browser mount); an upstream multi-plugin `catalog.json` is a distinct distribution index containing plugin identifiers, versions, remote base URLs, and files. Under our standalone-repository convention, **Plugin Hub reads the payload manifest and generates that distribution catalog automatically**, pinning installed files to a stable Release. Fields required here for Hub discovery should not be presented as requirements of the firmware's manual loader. A generated catalog's remote `base` is not a required field in the on-device manifest.
+
 ## 1. Preferred plugin repository layout
 
 Use one public GitHub repository per plugin whenever reasonably possible.
