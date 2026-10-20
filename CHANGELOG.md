@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.7 (2026-10-20)
+
+- Fix inconsistent catalog action alignment by using a full-width, two-column grid (descriptions grow, actions occupy the right edge) with right-aligned mobile fallback.
+- Keep Install in the normal button style, highlight Reinstall in yellow and Remove in red.
+- Require confirmation before removing installed plugins; recursively remove nested plugin files and report failures instead of silently leaving incomplete installations.
+- Support a Razor-Crest Plugins tab "Reinstall" handoff by plugin ID, reusing the selected Hub catalog's existing installer rather than duplicating install logic in firmware.
+- Preserve plugin data stored outside replaceable installation directories.
+
 ## 0.1.6
 
 - Compact generated catalogs and dynamically split oversized Community catalogs into balanced alphabetical ranges below the firmware-safe byte limit.

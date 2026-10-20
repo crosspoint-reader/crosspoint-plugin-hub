@@ -272,6 +272,17 @@ test('browser hub loads custom catalogs and only offers directional updates', as
   );
   assert.equal(cards.length, 3);
   assert.equal(cards[0].children[1].children[0].textContent, 'Reinstall');
+  assert.match(cards[0].children[1].children[0].className, /ph-btn-reinstall/);
+  assert.match(cards[0].children[1].children.find(child => child.textContent === 'Remove').className, /ph-btn-remove/);
+  for (const card of cards) {
+    assert.equal(card.style.display, 'grid');
+    assert.equal(card.style.gridTemplateColumns, 'minmax(0, 1fr) max-content');
+    assert.equal(card.style.width, '100%');
+    assert.equal(card.children[0].style.minWidth, '0');
+    assert.equal(card.children[1].style.justifyContent, 'flex-end');
+    assert.equal(card.children[1].style.justifySelf, 'end');
+    assert.equal(card.children[1].style.marginLeft, '0');
+  }
   assert.equal(cards[1].children[1].children[0].textContent, 'Update');
   assert.equal(cards[2].children[1].children[0].textContent, 'Install');
   assert.match(document.elements['ph-status'].textContent, /3 plugins available, 1 update/);
@@ -450,6 +461,8 @@ test('browser hub preserves alternate plugin root for updates and removal', asyn
   const document = fakeDocument();
   const fetchToSdCalls = [];
   const deletedPaths = [];
+  const confirms = [];
+  const changedLocations = [];
   const communityCatalog = {
     name: 'Community Plugins',
     plugins: [
@@ -478,6 +491,12 @@ test('browser hub preserves alternate plugin root for updates and removal', asyn
       const path = new URL(url, 'http://device').searchParams.get('path');
       if (path === '/plugins') {
         return response({ json: [{ name: 'altplugin', isDirectory: true }] });
+      }
+      if (path === '/plugins/altplugin') {
+        return response({ json: [
+          {name:'manifest.json', isDirectory:false},
+          {name:'plugin.js', isDirectory:false},
+        ]});
       }
       return response({ json: [] });
     }
@@ -520,7 +539,12 @@ test('browser hub preserves alternate plugin root for updates and removal', asyn
     },
   };
 
-  const render = await loadPlugin({ document, fetch });
+  const render = await loadPlugin({
+    document, fetch, URLSearchParams,
+    location: {search: '?plugin=pluginhub&manage=altplugin&action=reinstall'},
+    history: {replaceState: (...args) => changedLocations.push(args.at(-1))},
+    confirm: (message) => {confirms.push(message); return true;}
+  });
   await render({ innerHTML: '' }, api);
 
   let cards = document.elements['ph-list'].children.filter(
@@ -528,8 +552,8 @@ test('browser hub preserves alternate plugin root for updates and removal', asyn
   );
   assert.equal(cards.length, 1);
   assert.equal(cards[0].children[1].children[0].textContent, 'Update');
-
-  await cards[0].children[1].children[0].onclick();
+  assert.match(confirms[0], /Reinstall altplugin/);
+  assert.deepEqual(changedLocations, ['/plugins?plugin=pluginhub']);
   assert.deepEqual(fetchToSdCalls, [
     { url: 'https://example.test/altplugin/manifest.json', dest: '/plugins/altplugin/manifest.json' },
     { url: 'https://example.test/altplugin/plugin.js', dest: '/plugins/altplugin/plugin.js' },
@@ -541,6 +565,7 @@ test('browser hub preserves alternate plugin root for updates and removal', asyn
   const remove = cards[0].children[1].children.find((child) => child.textContent === 'Remove');
   assert.ok(remove);
   await remove.onclick();
+  assert.match(confirms.at(-1), /Remove Alternate Root Plugin/);
   assert.deepEqual(deletedPaths, [
     '/plugins/altplugin/manifest.json',
     '/plugins/altplugin/plugin.js',

@@ -84,7 +84,7 @@ Plugin updates preserve the existing discovered plugin root.
 
 ## Browser WebUI
 
-`plugin.js` provides the browser-side management UI. It can browse Community, install/update/reinstall/remove plugins, show installed/catalog versions, and use custom catalog URLs.
+`plugin.js` provides the browser-side management UI. It can browse Community, install/update/reinstall/remove plugins, show installed/catalog versions, and use custom catalog URLs. In Razor-Crest, the Plugins tab pins Plugin Hub first and routes selected-plugin Reinstall actions through the Hub catalog; this preserves the Hub as the single source of installer logic. Actions are right-aligned, with yellow Reinstall and red Remove controls. Removing a plugin preserves its separate `/.crosspoint/plugin-data/` settings.
 
 Custom catalogs remain separate from the built-in Community catalog and are a browser-side Plugin Hub feature.
 

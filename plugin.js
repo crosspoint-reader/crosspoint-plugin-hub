@@ -33,6 +33,15 @@ CrossPoint.registerPlugin(async (container, api) => {
   let extraCatalogs = [];
 
   container.innerHTML =
+    '<style>' +
+    '#ph-list .setting-row{display:grid;grid-template-columns:minmax(0,1fr) max-content;align-items:center;gap:12px;width:100%;box-sizing:border-box}' +
+    '#ph-list .setting-name{min-width:0;overflow-wrap:anywhere}' +
+    '#ph-list .setting-control{display:flex;justify-content:flex-end;gap:8px;margin-left:0;flex-wrap:nowrap}' +
+    '@media(max-width:600px){#ph-list .setting-row{grid-template-columns:minmax(0,1fr)}' +
+    '#ph-list .setting-control{justify-self:end}}' +
+    '#ph-list .ph-btn-reinstall{background:#e8bf42!important;border-color:#b18d20!important;color:#202020!important}' +
+    '#ph-list .ph-btn-remove,.ph-btn-remove{background:#bc3636!important;border-color:#922727!important;color:#fff!important}' +
+    '</style>' +
     '<h2>Plugin Hub</h2>' +
     '<p id="ph-version" style="color:#666">Version: checking...</p>' +
     '<h3 style="margin:0.5em 0 0.2em">Browse plugins</h3>' +
@@ -50,6 +59,17 @@ CrossPoint.registerPlugin(async (container, api) => {
   const catalogsEl = document.getElementById('ph-catalogs');
   const customCatalogsEl = document.getElementById('ph-custom-catalogs');
   const listEl = document.getElementById('ph-list');
+  const manageParams = typeof location !== 'undefined' && typeof URLSearchParams !== 'undefined'
+    ? new URLSearchParams(location.search) : null;
+  const requestedPlugin = String(manageParams?.get('manage') || '');
+  let pendingReinstall = manageParams?.get('action') === 'reinstall' &&
+                         /^[a-zA-Z0-9_-]{1,64}$/.test(requestedPlugin);
+  function clearManagementIntent() {
+    pendingReinstall = false;
+    if (typeof history !== 'undefined' && history.replaceState) {
+      history.replaceState(null, '', '/plugins?plugin=pluginhub');
+    }
+  }
   const status = (text) => {
     document.getElementById('ph-status').textContent = text;
   };
@@ -370,31 +390,40 @@ CrossPoint.registerPlugin(async (container, api) => {
   async function uninstallPlugin(plugin, installedDir = null) {
     validatePlugin(plugin);
     const dir = installedDir || PLUGINS_DIR + '/' + plugin.name;
-
-    for (const file of plugin.files) {
-      let rel;
-      try {
-        rel = safeRelativePath(file);
-      } catch (e) {
-        continue;
-      }
-
-      try {
-        await fetch('/delete', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: 'path=' + encodeURIComponent(dir + '/' + rel)
-        });
-      } catch (e) {}
+    if (!PLUGIN_ROOTS.some(root => dir === root + '/' + plugin.name)) {
+      throw new Error('unsafe plugin installation directory');
     }
-
-    try {
-      await fetch('/delete', {
+    let examined = 0;
+    async function deleteOne(path) {
+      const response = await fetch('/delete', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: 'path=' + encodeURIComponent(dir)
+        headers: {'Content-Type':'application/x-www-form-urlencoded'},
+        body: 'path=' + encodeURIComponent(path)
       });
-    } catch (e) {}
+      if (!response.ok) throw new Error('cannot remove ' + path + ' (HTTP ' + response.status + ')');
+    }
+    async function removeTree(path, depth) {
+      if (++examined > 1024 || depth > 12) throw new Error('plugin directory too large to remove safely');
+      const response = await fetch('/api/files?path=' + encodeURIComponent(path));
+      if (!response.ok) throw new Error('cannot inspect ' + path);
+      const contents = await response.json();
+      if (!Array.isArray(contents)) throw new Error('invalid plugin directory listing');
+      for (const item of contents) {
+        const name = String(item?.name || '');
+        if (!name || name === '.' || name === '..' || name.includes('/') ||
+            name.includes('\\') || name.includes('\0')) {
+          throw new Error('unsafe file name returned by device');
+        }
+        const child = path + '/' + name;
+        if (item.isDirectory) await removeTree(child, depth + 1);
+        else await deleteOne(child);
+      }
+      await deleteOne(path);
+    }
+    // This removes files that aren't in the currently published catalog too,
+    // and supports nested plugin assets. Configuration in the separate
+    // /.crosspoint/plugin-data/<id> namespace is deliberately untouched.
+    await removeTree(dir, 0);
   }
 
   function renderCatalogs() {
@@ -458,7 +487,7 @@ CrossPoint.registerPlugin(async (container, api) => {
 
       const remove = document.createElement('button');
       remove.type = 'button';
-      remove.className = 'btn-small';
+      remove.className = 'btn-small ph-btn-remove';
       remove.textContent = 'Remove';
       remove.onclick = async () => {
         const removed = extraCatalogs[index];
@@ -502,6 +531,15 @@ CrossPoint.registerPlugin(async (container, api) => {
 
     const card = document.createElement('div');
     card.className = 'setting-row';
+    card.id = 'ph-plugin-' + plugin.name;
+    // Use an actual full-width two-column grid. justify-content alone
+    // aligned the group internally, not the actions against the list edge.
+    card.style.display = 'grid';
+    card.style.gridTemplateColumns = 'minmax(0, 1fr) max-content';
+    card.style.width = '100%';
+    card.style.boxSizing = 'border-box';
+    card.style.alignItems = 'center';
+    card.style.gap = '12px';
 
     let state = '';
     if (updateAvailable) {
@@ -525,6 +563,8 @@ CrossPoint.registerPlugin(async (container, api) => {
 
     const meta = document.createElement('span');
     meta.className = 'setting-name';
+    meta.style.minWidth = '0';
+    meta.style.overflowWrap = 'anywhere';
     meta.innerHTML =
       '<strong>' +
       escapeHtml(plugin.title || plugin.name) +
@@ -541,10 +581,16 @@ CrossPoint.registerPlugin(async (container, api) => {
 
     const controls = document.createElement('span');
     controls.className = 'setting-control';
+    controls.style.display = 'flex';
+    controls.style.justifyContent = 'flex-end';
+    controls.style.marginLeft = '0';
+    controls.style.justifySelf = 'end';
+    controls.style.flexWrap = 'nowrap';
+    controls.style.gap = '8px';
 
     const install = document.createElement('button');
     install.type = 'button';
-    install.className = 'btn-small btn-add';
+    install.className = 'btn-small btn-add' + (isInstalled && !updateAvailable ? ' ph-btn-reinstall' : '');
     const originalLabel = updateAvailable
       ? 'Update'
       : (isInstalled ? 'Reinstall' : 'Install');
@@ -575,9 +621,10 @@ CrossPoint.registerPlugin(async (container, api) => {
     if (isInstalled) {
       const remove = document.createElement('button');
       remove.type = 'button';
-      remove.className = 'btn-small';
+      remove.className = 'btn-small ph-btn-remove';
       remove.textContent = 'Remove';
       remove.onclick = async () => {
+        if (typeof confirm === 'function' && !confirm('Remove ' + (plugin.title || plugin.name) + ' from the SD card?')) return;
         remove.disabled = true;
         status('Removing ' + (plugin.title || plugin.name) + '…');
 
@@ -632,6 +679,7 @@ CrossPoint.registerPlugin(async (container, api) => {
       listEl.appendChild(header);
     }
 
+    let requestedCard = null;
     for (const plugin of plugins) {
       if (
         installed.has(plugin.name) &&
@@ -639,7 +687,28 @@ CrossPoint.registerPlugin(async (container, api) => {
       ) {
         updates += 1;
       }
-      listEl.appendChild(pluginCard(plugin, installed));
+      const card = pluginCard(plugin, installed);
+      listEl.appendChild(card);
+      if (pendingReinstall && plugin.name === requestedPlugin) requestedCard = card;
+    }
+
+    if (pendingReinstall) {
+      if (!requestedCard || !installed.has(requestedPlugin)) {
+        status('Reinstall unavailable: ' + requestedPlugin +
+          ' is not installed or is absent from this catalog. Choose the correct Plugin Hub catalog.');
+        clearManagementIntent();
+        return;
+      }
+      clearManagementIntent();
+      const action = requestedCard.children[1].children[0];
+      if (requestedCard.scrollIntoView) requestedCard.scrollIntoView({block:'center'});
+      if (typeof confirm === 'function' && !confirm('Reinstall ' + requestedPlugin +
+          ' from the selected Plugin Hub catalog?')) {
+        status('Reinstallation cancelled.');
+        return;
+      }
+      await action.onclick();
+      return;
     }
 
     let message =
