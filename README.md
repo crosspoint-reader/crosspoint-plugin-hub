@@ -5,7 +5,7 @@ Plugin Hub is a CrossPoint SD-card plugin for discovering, installing, updating,
 Plugin Hub currently publishes one user-facing catalog: **Community Plugins**. Valid discovered plugins are published there automatically.
 
 > [!NOTE]
-> The CrossPoint SD-plugin system has not yet shipped in a stable firmware release. Plugin Hub `0.1.6` is the current production Plugin Hub release and is published from `crosspoint-reader/crosspoint-plugin-hub`.
+> Plugin Hub `0.1.7` is the current stable Plugin Hub release. Use a recent **CrossPoint Nightly** with the Plugin System enabled for the on-reader catalog, including dynamically fetched catalog lists through `browse.lists_url`. The browser interface (`plugin.js`) and on-reader interface (`device.json`) are complementary and work independently wherever the firmware exposes their standard plugin capabilities.
 
 ## Documentation
 
@@ -84,7 +84,7 @@ Plugin updates preserve the existing discovered plugin root.
 
 ## Browser WebUI
 
-`plugin.js` provides the browser-side management UI. It can browse Community, install/update/reinstall/remove plugins, show installed/catalog versions, and use custom catalog URLs. In Razor-Crest, the Plugins tab pins Plugin Hub first and routes selected-plugin Reinstall actions through the Hub catalog; this preserves the Hub as the single source of installer logic. Actions are right-aligned, with yellow Reinstall and red Remove controls. Removing a plugin preserves its separate `/.crosspoint/plugin-data/` settings.
+`plugin.js` provides the browser-side management UI wherever the firmware hosts browser plugins. It can browse Community, install/update/reinstall/remove plugins, show installed/catalog versions, and use custom catalog URLs. Action buttons are right-aligned, with yellow **Reinstall** and red **Remove** controls. A browser host may optionally open Plugin Hub with a selected plugin and a reinstall request; Plugin Hub handles it through the existing catalog installer, without requiring any special firmware implementation. Uninstalling a plugin removes its installation files; independently stored plugin data is left untouched if the firmware provides such storage.
 
 Custom catalogs remain separate from the built-in Community catalog and are a browser-side Plugin Hub feature.
 
