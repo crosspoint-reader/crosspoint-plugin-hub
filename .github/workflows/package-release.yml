@@ -43,6 +43,9 @@ jobs:
           fi
 
           git fetch --force origin "refs/tags/$release_tag:refs/tags/$release_tag"
+          # Read actual files from the tag; reject mismatched versions or a
+          # version suffix in new Plugin Hub titles before publication.
+          python tools/check_release_metadata.py "$release_tag"
 
           version="${release_tag#v}"
           asset="pluginhub-${version}.zip"

@@ -5,7 +5,7 @@ Plugin Hub is a CrossPoint SD-card plugin for discovering, installing, updating,
 Plugin Hub currently publishes one user-facing catalog: **Community Plugins**. Valid discovered plugins are published there automatically.
 
 > [!NOTE]
-> Plugin Hub `0.1.7` is the current stable Plugin Hub release. Use a recent **CrossPoint Nightly** with the Plugin System enabled for the on-reader catalog, including dynamically fetched catalog lists through `browse.lists_url`. The browser interface (`plugin.js`) and on-reader interface (`device.json`) are complementary and work independently wherever the firmware exposes their standard plugin capabilities.
+> Plugin Hub `0.1.8` is the current stable Plugin Hub release. Use a recent **CrossPoint Nightly** with the Plugin System enabled for the on-reader catalog, including dynamically fetched catalog lists through `browse.lists_url`. The browser interface (`plugin.js`) and on-reader interface (`device.json`) are complementary and work independently wherever the firmware exposes their standard plugin capabilities.
 
 ## Documentation
 
@@ -83,6 +83,8 @@ CrossPoint can discover plugins from:
 Plugin updates preserve the existing discovered plugin root.
 
 ## Browser WebUI
+
+**Release and stable synchronization:** The publishing workflows validate the release-tag versions and ensure both display titles are exactly `Plugin Hub`. The release package archives those files unchanged. Once a stable release is published, the promotion workflow aligns `stable` to the newest eligible `main` commit; catalog refreshes do the same after their generated commits. This keeps the bootstrap branch fully caught up without exposing unreleased manifest, device or browser-plugin code. The GitHub Release keeps its immutable version tag.
 
 `plugin.js` provides the browser-side management UI wherever the firmware hosts browser plugins. It can browse Community, install/update/reinstall/remove plugins, show installed/catalog versions, and use custom catalog URLs. Action buttons are right-aligned, with yellow **Reinstall** and red **Remove** controls. A browser host may optionally open Plugin Hub with a selected plugin and a reinstall request; Plugin Hub handles it through the existing catalog installer, without requiring any special firmware implementation. Uninstalling a plugin removes its installation files; independently stored plugin data is left untouched if the firmware provides such storage.
 

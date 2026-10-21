@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.8 (2026-10-21)
+
+- Remove the version suffix from the on-reader Plugin Hub title while retaining the version in manifest/device metadata.
+- Verify that both installed titles remain `Plugin Hub` and the release tag matches the metadata before packaging and stable promotion.
+- Publish the release with the plain version tag as its GitHub Release name.
+- Keep `stable` synchronized with the latest `main` catalog commits after release, guarded so unreleased runtime files cannot be promoted.
+
 ## 0.1.7 (2026-10-20)
 
 - Fix inconsistent catalog action alignment by using a full-width, two-column grid (descriptions grow, actions occupy the right edge) with right-aligned mobile fallback.

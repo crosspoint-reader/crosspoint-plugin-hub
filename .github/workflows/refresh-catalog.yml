@@ -22,7 +22,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: pluginhub-catalog
+  group: pluginhub-stable-sync
   cancel-in-progress: false
 
 jobs:
@@ -67,3 +67,8 @@ jobs:
           git commit -m "chore: refresh plugin catalogs"
           git pull --rebase origin main
           git push origin HEAD:main
+
+      - name: Keep stable current after catalog refresh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash tools/sync_stable.sh

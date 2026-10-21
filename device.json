@@ -1,5 +1,5 @@
 {
-  "title": "Plugin Hub v0.1.7",
+  "title": "Plugin Hub",
   "description": "Discover, install, and update CrossPoint plugins.",
   "browse": {
     "format": "json",
@@ -31,5 +31,6 @@
       "files": "files",
       "subdir": "{id}"
     }
-  }
+  },
+  "version": "0.1.8"
 }
