@@ -1,0 +1,336 @@
+#!/usr/bin/env python3
+"""Build capability-gated theme and wallpaper catalogs without changing legacy plugin catalogs.
+
+Only published, stable GitHub release assets are indexed. Each asset is downloaded,
+validated against its embedded manifest and scanned for ZIP traversal/bombs.
+Nothing here adds themes/wallpapers to legacy plugin catalogs or installation paths.
+"""
+from __future__ import annotations
+import argparse
+import datetime as dt
+import hashlib
+import io
+import json
+import os
+import re
+import sys
+import urllib.parse
+import zipfile
+from collections import defaultdict
+from pathlib import Path
+
+from build_catalog import GitHubClient, GitHubRateLimitError, CatalogError, load_blacklist, is_blacklisted_repository
+
+ROOT = Path(__file__).resolve().parents[1]
+ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")
+VERSION = re.compile(r"^\d+\.\d+\.\d+$")
+CAP = re.compile(r"^[a-z][a-z0-9_.-]{0,63}$")
+MAX_ZIP_BYTES = 32 * 1024 * 1024
+MAX_PACK_BYTES = 64 * 1024 * 1024
+MAX_MEMBERS = 128
+KINDS = {
+    "theme-pack": ("crosspoint-theme", "theme", "community-themes.json", "Community Themes", "theme.sd.v1"),
+    "wallpaper-pack": ("crosspoint-wallpaper", "wallpaper", "community-wallpapers.json", "Community Wallpaper Packs", "wallpaper.packs.v1"),
+}
+SEEDS = {
+    "theme-pack": ("jadehawk/halo.crosspoint-theme",),
+    "wallpaper-pack": ("jadehawk/starwars.crosspoint-wallpaper",),
+}
+BASE_URL = "https://raw.githubusercontent.com/crosspoint-reader/crosspoint-plugin-hub/main/"
+
+
+def require(condition, message):
+    if not condition:
+        raise CatalogError(message)
+
+
+def safe_path(path):
+    return (isinstance(path, str) and path and len(path) <= 180 and
+            "\\" not in path and not path.startswith("/") and
+            all(part not in ("", ".", "..") for part in path.split("/")) and
+            all(ord(c) >= 32 and ord(c) < 127 for c in path))
+
+
+def safe_manifest(manifest, ident, kind, tag):
+    require(isinstance(manifest, dict), "manifest must be an object")
+    require(manifest.get("kind") == kind and manifest.get("name") == ident and
+            ID.fullmatch(ident) is not None, "invalid package identity or kind")
+    version = manifest.get("version")
+    require(isinstance(version, str) and VERSION.fullmatch(version) is not None and
+            tag == "v" + version, "release tag/version mismatch")
+    require(isinstance(manifest.get("title"), str) and
+            0 < len(manifest["title"]) <= 60, "invalid package title")
+    require(isinstance(manifest.get("author"), str) and
+            0 < len(manifest["author"]) <= 120, "invalid author")
+    declared = manifest.get("files")
+    require(isinstance(declared, list) and 2 <= len(declared) <= MAX_MEMBERS and
+            all(safe_path(n) for n in declared) and len(set(declared)) == len(declared) and
+            {"manifest.json", "README.md"}.issubset(declared), "unsafe or invalid manifest files")
+    if kind == "wallpaper-pack":
+        require(len(set(manifest) - {"kind", "name", "collection", "title", "author", "version", "target_resolution", "images", "files"}) == 0,
+                "unknown wallpaper manifest keys")
+        images = manifest.get("images")
+        require(isinstance(images, list) and 1 <= len(images) <= 32 and
+                len(images) == len(set(images)) and all(
+                    isinstance(n, str) and re.fullmatch(r"wallpapers/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,79}\.bmp", n)
+                    for n in images), "invalid wallpaper images")
+        require(set(declared) == set(images) | {"manifest.json", "README.md"},
+                "wallpaper files list not exact")
+        collection = manifest.get("collection")
+        require(isinstance(collection, str) and ID.fullmatch(collection) is not None,
+                "wallpaper collection identifier required")
+        resolution = manifest.get("target_resolution")
+        require(isinstance(resolution, dict) and set(resolution) == {"width", "height"} and
+                all(type(resolution[k]) is int and 0 < resolution[k] <= 3072 for k in ("width", "height")),
+                "wallpaper variant requires target_resolution")
+    else:
+        themes = manifest.get("themes")
+        require(isinstance(themes, list) and 1 <= len(themes) <= 16, "missing or invalid themes")
+        for theme in themes:
+            require(isinstance(theme, dict), "theme metadata invalid")
+            theme_id = theme.get("id")
+            require(isinstance(theme_id, str) and ID.fullmatch(theme_id) is not None,
+                    "invalid theme ID")
+            require(theme.get("path") == f"themes/{theme_id}/theme.json" and
+                    theme["path"] in declared, "invalid theme entry path")
+            requires = theme.get("requires")
+            require(isinstance(requires, list) and all(isinstance(x, str) and
+                    CAP.fullmatch(x) for x in requires), "invalid theme requirements")
+    return declared
+
+
+def verify_bmp(raw, dimensions):
+    import struct
+    require(54 <= len(raw) <= 8 * 1024 * 1024 and raw[:2] == b"BM", "invalid BMP data")
+    offset = struct.unpack_from("<I", raw, 10)[0]
+    dib_size, w, h, planes, bpp, compression = struct.unpack_from("<IiiHHI", raw, 14)
+    require(dib_size >= 40 and w > 0 and h != 0 and planes == 1 and
+            bpp in (1, 2, 4, 8, 24, 32) and
+            (compression == 0 or (bpp == 32 and compression == 3)),
+            "unsupported BMP")
+    require(w == dimensions["width"] and abs(h) == dimensions["height"],
+            "BMP dimensions mismatch target resolution")
+    require(54 <= offset <= len(raw) and ((w * bpp + 31) // 32) * 4 * abs(h) <= len(raw) - offset,
+            "truncated BMP")
+
+
+def check_asset(raw: bytes, ident: str, kind: str, tag: str):
+    suffix = KINDS[kind][0]
+    expected_prefix = f"{ident}.{suffix}/"
+    require(len(raw) <= MAX_ZIP_BYTES, "release ZIP too large")
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(raw))
+        infos = archive.infolist()
+        require(2 <= len(infos) <= MAX_MEMBERS, "invalid ZIP member count")
+        names = [i.filename for i in infos]
+        require(len(names) == len(set(names)), "duplicate archive member paths")
+        require(all(n.startswith(expected_prefix) and safe_path(n) and not n.endswith("/") for n in names),
+                "archive contains unsafe paths or another package")
+        require(all(not (i.external_attr >> 16) & 0o170000 == 0o120000 for i in infos),
+                "ZIP symlinks not allowed")
+        require(sum(i.file_size for i in infos) <= MAX_PACK_BYTES and
+                all(0 <= i.file_size <= 8 * 1024 * 1024 for i in infos),
+                "ZIP expands beyond safety limits")
+        contents = {i.filename[len(expected_prefix):]: archive.read(i) for i in infos}
+        manifest = json.loads(contents["manifest.json"].decode("utf-8"))
+        declared = safe_manifest(manifest, ident, kind, tag)
+        require(set(contents) == set(declared), "release ZIP does not exactly match manifest file list")
+        if kind == "wallpaper-pack":
+            for image in manifest["images"]:
+                verify_bmp(contents[image], manifest["target_resolution"])
+        else:
+            for theme in manifest["themes"]:
+                meta = json.loads(contents[theme["path"]].decode("utf-8"))
+                require(isinstance(meta, dict), "invalid theme.json")
+        return manifest
+    except (zipfile.BadZipFile, KeyError, ValueError, UnicodeDecodeError) as exc:
+        raise CatalogError(f"corrupt or malformed release asset: {exc}") from exc
+
+
+def stable_assets(client, repo, kind):
+    """All and only manifest-matched ZIP variants from newest stable release."""
+    full_name = repo["full_name"]
+    release = client.latest_stable_release(full_name)
+    if not release:
+        return []
+    tag = release.get("tag_name")
+    require(isinstance(tag, str) and re.fullmatch(r"v\d+\.\d+\.\d+", tag),
+            "latest stable release tag must be vMAJOR.MINOR.PATCH")
+    suffix = KINDS[kind][0]
+    matched = [a for a in release.get("assets", []) if
+               isinstance(a, dict) and isinstance(a.get("name"), str) and
+               a["name"].endswith(f".{suffix}.zip")]
+    require(1 <= len(matched) <= 8, "expected 1–8 install-only ZIP assets")
+    results = []
+    for asset in matched:
+        filename = asset["name"]
+        version = tag[1:]
+        ending = f"-{version}.{suffix}.zip"
+        require(filename.endswith(ending), "release asset naming/version mismatch")
+        ident = filename[:-len(ending)]
+        require(ID.fullmatch(ident) is not None, "unsafe package ID in release asset name")
+        url = asset.get("browser_download_url")
+        require(isinstance(url, str) and url.startswith(
+                f"https://github.com/{full_name}/releases/download/{urllib.parse.quote(tag, safe='')}/"),
+                "release asset URL is not GitHub release download")
+        require(type(asset.get("size")) is int and
+                0 < asset["size"] <= MAX_ZIP_BYTES, "release asset too large")
+        raw = client.fetch_bytes_url(url, MAX_ZIP_BYTES)
+        require(len(raw) == asset["size"], "downloaded ZIP size mismatch")
+        manifest = check_asset(raw, ident, kind, tag)
+        results.append({
+            "name": ident, "title": manifest["title"], "author": manifest["author"],
+            "manifest": manifest, "asset_url": url, "bytes": len(raw),
+            "sha256": hashlib.sha256(raw).hexdigest(), "tag": tag,
+            "release_url": release.get("html_url", ""), "repository": full_name,
+        })
+    return results
+
+
+def discover(client, kind, seeds=None, excluded=None):
+    topic = KINDS[kind][0]
+    repos = {}
+    for item in client.search_repositories("topic:" + topic):
+        if isinstance(item.get("full_name"), str):
+            repos[item["full_name"].lower()] = item
+    for full_name in (seeds if seeds is not None else SEEDS[kind]):
+        if full_name.lower() not in repos:
+            repos[full_name.lower()] = client.repository(full_name)
+    found = []
+    for repo in sorted(repos.values(), key=lambda x: x["full_name"].casefold()):
+        if repo.get("archived") or repo.get("disabled") or repo.get("private") or is_blacklisted_repository(repo["full_name"], excluded or set()):
+            continue
+        try:
+            found.extend(stable_assets(client, repo, kind))
+        except GitHubRateLimitError:
+            raise
+        except CatalogError as exc:
+            print(f"skip {repo['full_name']} ({kind}): {exc}", file=sys.stderr)
+    return found
+
+
+def catalog_items(packages, kind):
+    collisions = []
+    if kind == "wallpaper-pack":
+        groups = defaultdict(list)
+        for package in packages:
+            key = (package["repository"].lower(), package["manifest"]["collection"])
+            groups[key].append(package)
+        items = []
+        for (_, collection), variants in groups.items():
+            names = [p["name"] for p in variants]
+            resolutions = [(p["manifest"]["target_resolution"]["width"],
+                            p["manifest"]["target_resolution"]["height"]) for p in variants]
+            if len(set(names)) != len(names) or len(set(resolutions)) != len(resolutions):
+                collisions.append({"kind":kind,"collection":collection,"repository":variants[0]["repository"],
+                                   "reason":"duplicate package ID or resolution in collection"})
+                continue
+            first = sorted(variants, key=lambda p: p["name"])[0]
+            items.append({
+                "name":collection, "title":re.sub(r"\s*\((?:X3|X4|X4\+|X4Pro)\)$","",first["title"],flags=re.I),
+                "kind":kind, "author":first["author"], "version":first["manifest"]["version"],
+                "repository":first["repository"], "release":first["tag"],
+                "release_url":first["release_url"], "requires":["wallpaper.packs.v1"],
+                "variants":[{"name":p["name"],"target_resolution":p["manifest"]["target_resolution"],
+                             "asset_url":p["asset_url"],"sha256":p["sha256"],"bytes":p["bytes"]}
+                            for p in sorted(variants,key=lambda v:v["name"])],
+            })
+    else:
+        items = []
+        for p in packages:
+            m = p["manifest"]
+            items.append({
+                "name":p["name"],"title":p["title"],"kind":kind,"author":p["author"],
+                "description":m.get("description",""),"version":m["version"],
+                "repository":p["repository"],"release":p["tag"],"release_url":p["release_url"],
+                "requires":["theme.sd.v1"],"asset_url":p["asset_url"],
+                "sha256":p["sha256"],"bytes":p["bytes"],
+                "themes":[{"id":t["id"],"title":t.get("title",t["id"]),
+                           "requires":t["requires"]} for t in m["themes"]]
+            })
+    # Ambiguous identities across repositories are quarantined, not arbitrarily chosen.
+    by_name = defaultdict(list)
+    for item in items:
+        by_name[item["name"]].append(item)
+    unique = []
+    for name, group in by_name.items():
+        if len(group) != 1:
+            collisions.append({"kind":kind,"collection":name,
+                               "repositories":sorted(x["repository"] for x in group),
+                               "reason":"duplicate catalog identity"})
+        else:
+            unique.append(group[0])
+    unique.sort(key=lambda x:(x["title"].casefold(),x["name"]))
+    return unique, collisions
+
+
+def write_if_changed(path, payload):
+    prior = None
+    if path.is_file():
+        try:
+            prior = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            pass
+    if isinstance(prior, dict) and {k:v for k,v in prior.items() if k != "generated_at"} == payload:
+        return False
+    payload = {**payload,
+               "generated_at":dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
+                               .isoformat().replace("+00:00","Z")}
+    path.write_text(json.dumps(payload,ensure_ascii=False,sort_keys=True,separators=(",",":"))+"\n",
+                    encoding="utf-8",newline="\n")
+    return True
+
+
+def build(client, output:Path, legacy_index:Path, catalog_repository="crosspoint-reader/crosspoint-plugin-hub",
+          catalog_ref="main", seeds=None, excluded=None):
+    output.mkdir(parents=True,exist_ok=True)
+    collected = {}
+    collisions = []
+    for kind, (_,_, filename,_,_) in KINDS.items():
+        packages = discover(client, kind, None if seeds is None else seeds.get(kind, []), excluded)
+        items, duplicate = catalog_items(packages, kind)
+        collected[kind] = items
+        collisions.extend(duplicate)
+        write_if_changed(output/filename, {
+            "schema_version":2, "kind":kind, "name":KINDS[kind][3], "items":items
+        })
+    require(legacy_index.is_file(), "legacy catalog index missing: run the existing plugin scan first")
+    previous = json.loads(legacy_index.read_text(encoding="utf-8"))
+    require(isinstance(previous.get("lists"), list), "invalid legacy catalog index")
+    lists = [dict(legacy, kind="plugin",items="plugins",requires=["catalog.lists"])
+             for legacy in previous["lists"]]
+    for kind, (_,_,filename,title,capability) in KINDS.items():
+        lists.append({
+            "title": title, "url":f"https://raw.githubusercontent.com/{catalog_repository}/{catalog_ref}/{filename}",
+            "kind":kind, "items":"items", "requires":[capability],
+            "notice":{"title":title,"message":"Third-party community content. Verify the source before installation.",
+                      "confirm":"Continue","cancel":"Go Back"}
+        })
+    write_if_changed(output/"catalog-lists-capabilities.json",{"schema_version":2,"lists":lists})
+    write_if_changed(output/"duplicate-extension-ids.json",{
+        "schema_version":1,"duplicates":sorted(collisions,key=lambda x:(x["kind"],x["collection"]))
+    })
+    return {kind:len(items) for kind,items in collected.items()} | {"duplicates":len(collisions)}
+
+
+def main():
+    p=argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--output-dir",default=".")
+    p.add_argument("--legacy-index",default="catalog-lists.json")
+    p.add_argument("--blacklist",default="blacklist.json")
+    p.add_argument("--catalog-repository",default=os.getenv("GITHUB_REPOSITORY","crosspoint-reader/crosspoint-plugin-hub"))
+    p.add_argument("--catalog-ref",default="main")
+    args=p.parse_args()
+    client=GitHubClient(os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN"))
+    try:
+        exclusions = {repo.lower() for repo in load_blacklist(Path(args.blacklist))["repositories"]}
+        result=build(client,Path(args.output_dir),Path(args.legacy_index),
+                     args.catalog_repository,args.catalog_ref,excluded=exclusions)
+    except (CatalogError, OSError, ValueError) as e:
+        print(f"extension catalog build failed: {e}", file=sys.stderr)
+        return 1
+    print(json.dumps(result,sort_keys=True))
+    return 0
+
+if __name__=="__main__":
+    raise SystemExit(main())

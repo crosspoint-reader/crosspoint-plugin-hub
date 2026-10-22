@@ -2,10 +2,10 @@
 
 Plugin Hub is a CrossPoint SD-card plugin for discovering, installing, updating, reinstalling, and removing CrossPoint plugins.
 
-Plugin Hub currently publishes one user-facing catalog: **Community Plugins**. Valid discovered plugins are published there automatically.
+Plugin Hub currently exposes one legacy user-facing catalog: **Community Plugins**. Valid discovered plugins are published there automatically. The three-hour workflow now also publishes opt-in, capability-aware Themes and Wallpaper Packs catalogs for upcoming firmware support. Older firmware and the existing Plugin Hub installer continue using the plugin-only catalog.
 
 > [!NOTE]
-> Plugin Hub `0.1.8` is the current stable Plugin Hub release. Use a recent **CrossPoint Nightly** with the Plugin System enabled for the on-reader catalog, including dynamically fetched catalog lists through `browse.lists_url`. The browser interface (`plugin.js`) and on-reader interface (`device.json`) are complementary and work independently wherever the firmware exposes their standard plugin capabilities.
+> Plugin Hub `0.1.9` is the current stable Plugin Hub release. Use a recent **CrossPoint Nightly** with the Plugin System enabled for the on-reader catalog, including dynamically fetched catalog lists through `browse.lists_url`. The browser interface (`plugin.js`) and on-reader interface (`device.json`) are complementary and work independently wherever the firmware exposes their standard plugin capabilities.
 
 ## Documentation
 
@@ -45,7 +45,7 @@ The production catalog workflow:
 - regenerates `catalog-lists.json` so shard-layout changes do not require a Plugin Hub release;
 - generates optional item-details HTML and versioned release-asset mirrors when required.
 
-The workflow runs every three hours and can also be started manually.
+The workflow runs every three hours and can also be started manually. Its new extension outputs are community-themes.json, community-wallpapers.json and catalog-lists-capabilities.json. Those are not yet used for installation: see [Extended catalog schema](docs/EXTENSION_CATALOG_SCHEMA.md).
 
 ## CrossPoint integration
 
@@ -103,4 +103,4 @@ python -m unittest discover -s tests -v
 node --test tests/test_plugin_js.mjs
 ```
 
-`tools/build_catalog.py` and `tools/catalog_partitions.py` are production catalog-generation code.
+`tools/build_catalog.py`, `tools/catalog_partitions.py`, and `tools/build_extension_catalog.py` are production catalog-generation code.

@@ -366,11 +366,50 @@ node --test tests/test_plugin_js.mjs
 
 Running `python tools/build_catalog.py` performs a live catalog build and may require `GITHUB_TOKEN` or `GH_TOKEN` to avoid unauthenticated GitHub API rate limits.
 
-## 12. Plugin Hub release status
+## 12. Extended theme and wallpaper catalogs (generated; installer pending)
 
-Plugin Hub `0.1.8` is the current production Plugin Hub release.
+The existing `catalog.json`, `community-catalog*.json` and
+`catalog-lists.json` remain **plugin-only and backward compatible**.
+The three-hour workflow additionally generates:
 
-- `v0.1.8` is the current stable GitHub Release;
+- `community-themes.json`: indexed `theme-pack` release assets, with
+  individual theme `requires` capability arrays.
+- `community-wallpapers.json`: one catalog row per independent artwork
+  `collection`, containing an array of separately installable resolution
+  `variants`. A repo may contain multiple collections, and different
+  collections may provide the **same** resolution.
+- `catalog-lists-capabilities.json`: a schema-v2 extended index with all
+  existing plugin lists plus the Themes and Wallpapers lists; each list
+  declares its `kind`, item array key, and `requires`.
+- `duplicate-extension-ids.json`: invalid/colliding identities quarantined
+  without affecting unrelated collections.
+
+Discovery uses GitHub topics `crosspoint-theme` and
+`crosspoint-wallpaper`, stable matching releases, individual immutable ZIP
+assets, safe member paths and exact manifest file allowlists. Repository
+blacklists also apply. Theme/wallpaper entries are **not** added to the old
+plugin catalog and never use the plugins' install directory.
+
+All wallpaper packages have unique `name` IDs and share a repository
+release tag. A `collection` groups all artwork variants; only a duplicate
+`(collection, target_resolution)` within that collection is rejected.
+For example one repo can provide `starwars-x3`, `starwars-x4plus`,
+`starwarsyoda-x3` and `starwarsyoda-x4plus`.
+
+**Installer work remains:** Razor-Crest must opt into the new index,
+filter lists/items by exposed firmware capabilities and select one matching
+asset **per user-selected collection**. It must not download all variants
+or hard-code device model names. Native firmware currently allows eight
+installed wallpaper packs, but exposes no screen dimensions in `/api/status`.
+
+See [the extended catalog schema](docs/EXTENSION_CATALOG_SCHEMA.md) for
+fields, data examples, URLs and the firmware-facing integration contract.
+
+## 13. Plugin Hub release status
+
+Plugin Hub `0.1.9` is the current production Plugin Hub release.
+
+- `v0.1.9` is the current stable GitHub Release;
 - the `stable` branch is the production bootstrap pointer; publishing a release aligns it to the latest `main` commit once the packaged manifest, device settings and browser plugin match the newest published release. Subsequent catalog refreshes also synchronize `stable`, preventing it from falling behind `main`; unreleased runtime changes block synchronization;
 - firmware bootstrap installs Plugin Hub from `stable`;
 - Plugin Hub's generated Community entry resolves from its latest stable Release after catalog refresh.

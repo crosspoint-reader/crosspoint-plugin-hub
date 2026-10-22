@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.9 (2026-10-22)
+
+- Generate separate capability-gated Community Themes and Community Wallpaper Packs catalogs from stable GitHub releases without changing legacy Community Plugins catalogs.
+- Publish opt-in catalog-lists-capabilities.json with package kinds and required capabilities; legacy catalog-lists.json stays plugin-only.
+- Verify theme/wallpaper ZIP contents, package IDs, image resolutions, versions, immutable asset URLs, and hashes.
+- Group wallpaper resolution variants by collection, allow different collections to share resolutions and quarantine conflicting identities.
+- Apply repository blacklist rules to extension discovery, add automated tests, and document the new firmware-facing schema.
+- Keep theme/wallpaper installation pending the firmware's future generic package-kind and capability-aware catalog handlers.
+
 ## 0.1.8 (2026-10-21)
 
 - Remove the version suffix from the on-reader Plugin Hub title while retaining the version in manifest/device metadata.

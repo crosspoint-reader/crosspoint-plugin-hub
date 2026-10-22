@@ -10,12 +10,14 @@ on:
     paths:
       - "tools/build_catalog.py"
       - "tools/catalog_partitions.py"
+      - "tools/build_extension_catalog.py"
       - "tests/**"
       - "plugin.js"
       - "device.json"
       - "manifest.json"
       - "whitelist.json"
       - "blacklist.json"
+      - "PLUGIN_HUB_CONTRACT.md"
       - ".github/workflows/refresh-catalog.yml"
 
 permissions:
@@ -54,17 +56,22 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: python tools/build_catalog.py
 
+      - name: Build capability-gated theme and wallpaper catalogs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python tools/build_extension_catalog.py
+
       - name: Commit catalog and release-asset changes
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A catalog.json catalog-lists.json "community-catalog*.json" duplicate-plugin-ids.json release-assets details
+          git add -A catalog.json catalog-lists.json "community-catalog*.json" community-themes.json community-wallpapers.json catalog-lists-capabilities.json duplicate-plugin-ids.json duplicate-extension-ids.json release-assets details
           if git diff --cached --quiet; then
             echo "Catalogs and release-asset mirror are unchanged."
             exit 0
           fi
-          git commit -m "chore: refresh plugin catalogs"
+          git commit -m "chore: refresh plugin and extension catalogs"
           git pull --rebase origin main
           git push origin HEAD:main
 
