@@ -81,6 +81,28 @@ Firmware must expose a trustworthy actual display resolution before
 automatic selection is enabled; the current /api/status exposes capabilities
 but not screen width/height. Do not hardcode a device/model name to pick a ZIP.
 
+## Theme and Wallpaper Pack descriptions
+
+Published extension items use the same metadata as plugins: `name`,
+`title`, `description`, `author`, `version`, `repository`, and a
+`details: {url, format: "html"}` object. Each installable ZIP must contain
+`manifest.json`, a plain-text `README.md`, and a declared `DETAILS.md`,
+plus kind-specific resources. Both theme and wallpaper manifests declare a
+short `description`. The catalog generator extracts the rich Markdown from
+the **verified ZIP bytes**, not a mutable repository-root document or fallback.
+
+Rich text is converted with the existing safe Markdown-to-HTML converter,
+stored in immutable versioned assets under
+`details/extensions/themes/<id>/<version>.html` and
+`details/extensions/wallpapers/<collection>/<version>.html`.
+Attempting to replace HTML for an existing version fails the build: publish
+a new release instead.
+
+The generated HTML is a **catalog asset**, derived from the declared
+`DETAILS.md` inside the strict wallpaper/theme installer payload. A compatible firmware opens the details
+page before installation; its Installed list displays the short description
+instead of the author, who remains visible in item details.
+
 ## Publishing and safety
 
 The generator finds public repositories via crosspoint-theme and

@@ -1,6 +1,14 @@
 # Changelog
 
-## 0.1.10 (unreleased; firmware integration testing)
+## 0.1.11 (2026-10-23)
+
+- Align theme and wallpaper publication with the existing plugin-details contract.
+- Validate declared README, metadata, and packaged DETAILS.md directly from each release ZIP.
+- Publish immutable, sanitized rich-details HTML and short manifest descriptions for extension catalogs.
+- Enforce matching metadata for resolution variants while keeping plugin catalogs and browser installer unchanged.
+- Document pre-release acceptance checks for plugins, themes, and wallpapers.
+
+## 0.1.10 (2026-10-22)
 
 - Add optional `browse.capability_lists_url` to the on-reader Plugin Hub manifest for capability-gated plugin, theme and wallpaper discovery.
 - Add a self-contained plugin/theme/wallpaper publishing and AI-agent authoring guide, runtime capability primitives and known compatible-firmware table.

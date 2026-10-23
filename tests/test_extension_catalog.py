@@ -21,9 +21,9 @@ def bmp(w, h):
 
 
 def payload(name, kind, collection=None, resolution=(2, 3)):
-    manifest = {"kind": kind, "name": name, "title": name, "author": "Tester",
-                "version": "0.1.1", "files": ["manifest.json", "README.md"]}
-    files = {"README.md": b"test"}
+    manifest = {"kind": kind, "name": name, "title": name, "description": "19 unique e-ink wallpapers for <CrossPoint>.", "author": "Tester",
+                "version": "0.1.1", "files": ["manifest.json", "README.md", "DETAILS.md"]}
+    files = {"README.md": b"test", "DETAILS.md": b"# Pack\n\n19 unique e-ink wallpapers for <CrossPoint>."}
     if kind == "wallpaper-pack":
         manifest["collection"] = collection
         manifest["target_resolution"] = {"width": resolution[0], "height": resolution[1]}
@@ -109,10 +109,106 @@ class ExtensionCatalogTests(unittest.TestCase):
         self.assertEqual(items,[])
         self.assertEqual(len(conflicts),1)
 
+    def test_variant_metadata_disagreement_quarantines_collection(self):
+        x, _ = archive("starwars-x3", "wallpaper-pack", "starwars", (528, 792))
+        y, _ = archive("starwars-x4", "wallpaper-pack", "starwars", (480, 800))
+        y["description"] = "Conflicting publisher details"
+        packages = [{"name": ident, "manifest": m, "repository": "someone/wallpapers",
+                     "title": m["title"], "author": m["author"], "tag": "v0.1.1",
+                     "asset_url": "", "sha256": "a"*64, "bytes": 512, "release_url": ""}
+                    for ident, m in (("starwars-x3", x), ("starwars-x4", y))]
+        items, errors = ext.catalog_items(packages, "wallpaper-pack")
+        self.assertEqual(items, [])
+        self.assertEqual(len(errors), 1)
+
     def test_theme_manifest(self):
         _, raw = archive("halo","theme-pack")
         m = ext.check_asset(raw,"halo","theme-pack","v0.1.1")
         self.assertEqual(len(m["themes"]),1)
+
+    def test_extension_details_publish_and_remain_immutable(self):
+        manifest, _ = archive("starwars-x3", "wallpaper-pack", "starwars", (528, 792))
+        item = {"name": "starwars-x3", "manifest": manifest, "repository": "artist/wallpapers",
+                "title": manifest["title"], "author": "Tester", "tag": "v0.1.1",
+                "release_url": "", "asset_url": "https://example.test/pack.zip",
+                "bytes": 500, "sha256": "a" * 64,
+                "_details_markdown": "# Pack\n\n19 unique e-ink wallpapers for <CrossPoint>."}
+        entries, conflicts = ext.catalog_items([item], "wallpaper-pack")
+        self.assertEqual(conflicts, [])
+        self.assertEqual(entries[0]["description"], "19 unique e-ink wallpapers for <CrossPoint>.")
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.assertTrue(ext.publish_extension_details(
+                entries, "wallpaper-pack", root, "crosspoint-reader/crosspoint-plugin-hub", "main"))
+            html_path = root / "details" / "extensions" / "wallpapers" / "starwars" / "0.1.1.html"
+            self.assertIn("&lt;CrossPoint&gt;", html_path.read_text(encoding="utf-8"))
+            self.assertNotIn("_details_markdown", entries[0])
+            self.assertEqual(entries[0]["details"]["format"], "html")
+            self.assertIn("/details/extensions/wallpapers/starwars/0.1.1.html",
+                          entries[0]["details"]["url"])
+            self.assertFalse(ext.publish_extension_details(
+                entries, "wallpaper-pack", root, "crosspoint-reader/crosspoint-plugin-hub", "main"))
+            entries[0]["_details_markdown"] = "# Pack\n\nModified existing release"
+            with self.assertRaisesRegex(ext.CatalogError, "version bump"):
+                ext.publish_extension_details(
+                    entries, "wallpaper-pack", root, "crosspoint-reader/crosspoint-plugin-hub", "main")
+
+    def test_theme_catalog_preserves_author_and_description(self):
+        manifest, _ = archive("halo", "theme-pack")
+        manifest["author"] = "Jadehawk + IOSDEC"
+        manifest["description"] = "HALO-inspired CrossPoint UI theme"
+        entry = {"name": "halo", "manifest": manifest, "repository": "artist/halo",
+                 "title": "HALO", "author": manifest["author"], "tag": "v0.1.1",
+                 "release_url": "", "asset_url": "https://example.test/theme.zip",
+                 "bytes": 500, "sha256": "a" * 64,
+                 "_details_markdown": "# HALO\n\nTheme description"}
+        entries, errors = ext.catalog_items([entry], "theme-pack")
+        self.assertFalse(errors)
+        self.assertEqual(entries[0]["author"], "Jadehawk + IOSDEC")
+        self.assertEqual(entries[0]["description"], manifest["description"])
+        with tempfile.TemporaryDirectory() as temp:
+            self.assertTrue(ext.publish_extension_details(
+                entries, "theme-pack", Path(temp), "crosspoint-reader/crosspoint-plugin-hub", "main"))
+            self.assertIn("/details/extensions/themes/halo/0.1.1.html",
+                          entries[0]["details"]["url"])
+
+    def test_extension_rich_details_come_from_release_zip_not_repository(self):
+        _, raw = archive("starwars-x3", "wallpaper-pack", "starwars", (528, 792))
+        url = ("https://github.com/author/wallpapers/releases/download/"
+               "v0.1.1/starwars-x3-0.1.1.crosspoint-wallpaper.zip")
+
+        class ReleaseClient:
+            def latest_stable_release(self, name):
+                return {"tag_name": "v0.1.1", "html_url": "https://example.test/release",
+                        "assets": [{"name": "starwars-x3-0.1.1.crosspoint-wallpaper.zip",
+                                    "browser_download_url": url, "size": len(raw)}]}
+            def fetch_bytes_url(self, address, max_bytes):
+                return raw
+            def text_file(self, *args, **kwargs):
+                raise AssertionError("repository-root documentation must not be queried")
+
+        packages = ext.stable_assets(ReleaseClient(), {"full_name": "author/wallpapers"}, "wallpaper-pack")
+        self.assertEqual(len(packages), 1)
+        self.assertIn("19 unique e-ink", packages[0]["_details_markdown"])
+        items, errors = ext.catalog_items(packages, "wallpaper-pack")
+        self.assertFalse(errors)
+        self.assertEqual(items[0]["author"], "Tester")
+        self.assertEqual(items[0]["description"], packages[0]["manifest"]["description"])
+        with tempfile.TemporaryDirectory() as temp:
+            self.assertTrue(ext.publish_extension_details(
+                items, "wallpaper-pack", Path(temp), "crosspoint-reader/crosspoint-plugin-hub", "main"))
+            self.assertEqual(items[0]["details"]["format"], "html")
+
+    def test_extension_payload_cannot_omit_description_or_declared_details(self):
+        manifest, raw = archive("starwars-x3", "wallpaper-pack", "starwars", (528, 792))
+        missing_description = dict(manifest)
+        missing_description.pop("description")
+        with self.assertRaisesRegex(ext.CatalogError, "short description"):
+            ext.safe_manifest(missing_description, "starwars-x3", "wallpaper-pack", "v0.1.1")
+        missing_details = dict(manifest)
+        missing_details["files"] = [p for p in manifest["files"] if p != "DETAILS.md"]
+        with self.assertRaisesRegex(ext.CatalogError, "files"):
+            ext.safe_manifest(missing_details, "starwars-x3", "wallpaper-pack", "v0.1.1")
 
     def test_capability_index_does_not_modify_legacy_index(self):
         with tempfile.TemporaryDirectory() as temp:

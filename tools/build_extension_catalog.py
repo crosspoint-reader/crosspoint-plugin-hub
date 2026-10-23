@@ -19,7 +19,10 @@ import zipfile
 from collections import defaultdict
 from pathlib import Path
 
-from build_catalog import GitHubClient, GitHubRateLimitError, CatalogError, load_blacklist, is_blacklisted_repository
+from build_catalog import (GitHubClient, GitHubRateLimitError, CatalogError,
+                           load_blacklist, is_blacklisted_repository,
+                           markdown_details_to_html, DETAILS_OUTPUT_DIR,
+                           MAX_DETAILS_SOURCE_BYTES)
 
 ROOT = Path(__file__).resolve().parents[1]
 ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")
@@ -37,6 +40,7 @@ SEEDS = {
     "wallpaper-pack": ("jadehawk/starwars.crosspoint-wallpaper",),
 }
 BASE_URL = "https://raw.githubusercontent.com/crosspoint-reader/crosspoint-plugin-hub/main/"
+DETAILS_BY_KIND = {"theme-pack": "themes", "wallpaper-pack": "wallpapers"}
 
 
 def require(condition, message):
@@ -62,19 +66,21 @@ def safe_manifest(manifest, ident, kind, tag):
             0 < len(manifest["title"]) <= 60, "invalid package title")
     require(isinstance(manifest.get("author"), str) and
             0 < len(manifest["author"]) <= 120, "invalid author")
+    require(isinstance(manifest.get("description"), str) and
+            0 < len(manifest["description"]) <= 180, "missing or invalid short description")
     declared = manifest.get("files")
     require(isinstance(declared, list) and 2 <= len(declared) <= MAX_MEMBERS and
             all(safe_path(n) for n in declared) and len(set(declared)) == len(declared) and
-            {"manifest.json", "README.md"}.issubset(declared), "unsafe or invalid manifest files")
+            {"manifest.json", "README.md", "DETAILS.md"}.issubset(declared), "unsafe or invalid manifest files")
     if kind == "wallpaper-pack":
-        require(len(set(manifest) - {"kind", "name", "collection", "title", "author", "version", "target_resolution", "images", "files"}) == 0,
+        require(len(set(manifest) - {"kind", "name", "collection", "title", "description", "author", "version", "target_resolution", "images", "files"}) == 0,
                 "unknown wallpaper manifest keys")
         images = manifest.get("images")
         require(isinstance(images, list) and 1 <= len(images) <= 32 and
                 len(images) == len(set(images)) and all(
                     isinstance(n, str) and re.fullmatch(r"wallpapers/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,79}\.bmp", n)
                     for n in images), "invalid wallpaper images")
-        require(set(declared) == set(images) | {"manifest.json", "README.md"},
+        require(set(declared) == set(images) | {"manifest.json", "README.md", "DETAILS.md"},
                 "wallpaper files list not exact")
         collection = manifest.get("collection")
         require(isinstance(collection, str) and ID.fullmatch(collection) is not None,
@@ -135,6 +141,10 @@ def check_asset(raw: bytes, ident: str, kind: str, tag: str):
         manifest = json.loads(contents["manifest.json"].decode("utf-8"))
         declared = safe_manifest(manifest, ident, kind, tag)
         require(set(contents) == set(declared), "release ZIP does not exactly match manifest file list")
+        details_bytes = contents["DETAILS.md"]
+        require(0 < len(details_bytes) <= MAX_DETAILS_SOURCE_BYTES,
+                "DETAILS.md missing or exceeds size limit")
+        require(bool(details_bytes.decode("utf-8").strip()), "DETAILS.md cannot be blank")
         if kind == "wallpaper-pack":
             for image in manifest["images"]:
                 verify_bmp(contents[image], manifest["target_resolution"])
@@ -162,6 +172,7 @@ def stable_assets(client, repo, kind):
                a["name"].endswith(f".{suffix}.zip")]
     require(1 <= len(matched) <= 8, "expected 1–8 install-only ZIP assets")
     results = []
+    # Source details exclusively from the verified release ZIP, like plugins.
     for asset in matched:
         filename = asset["name"]
         version = tag[1:]
@@ -178,11 +189,15 @@ def stable_assets(client, repo, kind):
         raw = client.fetch_bytes_url(url, MAX_ZIP_BYTES)
         require(len(raw) == asset["size"], "downloaded ZIP size mismatch")
         manifest = check_asset(raw, ident, kind, tag)
+        with zipfile.ZipFile(io.BytesIO(raw)) as verified_zip:
+            member = f"{ident}.{suffix}/DETAILS.md"
+            details_markdown = verified_zip.read(member).decode("utf-8")
         results.append({
             "name": ident, "title": manifest["title"], "author": manifest["author"],
             "manifest": manifest, "asset_url": url, "bytes": len(raw),
             "sha256": hashlib.sha256(raw).hexdigest(), "tag": tag,
             "release_url": release.get("html_url", ""), "repository": full_name,
+            "_details_markdown": details_markdown,
         })
     return results
 
@@ -221,7 +236,11 @@ def catalog_items(packages, kind):
             names = [p["name"] for p in variants]
             resolutions = [(p["manifest"]["target_resolution"]["width"],
                             p["manifest"]["target_resolution"]["height"]) for p in variants]
-            if len(set(names)) != len(names) or len(set(resolutions)) != len(resolutions):
+            # One catalog collection must not combine conflicting publisher
+            # identity or metadata across display variants.
+            metadata = {(v["manifest"]["version"], v["author"],
+                         v["manifest"]["description"]) for v in variants}
+            if len(metadata) != 1 or len(set(names)) != len(names) or len(set(resolutions)) != len(resolutions):
                 collisions.append({"kind":kind,"collection":collection,"repository":variants[0]["repository"],
                                    "reason":"duplicate package ID or resolution in collection"})
                 continue
@@ -229,6 +248,8 @@ def catalog_items(packages, kind):
             items.append({
                 "name":collection, "title":re.sub(r"\s*\((?:X3|X4|X4\+|X4Pro)\)$","",first["title"],flags=re.I),
                 "kind":kind, "author":first["author"], "version":first["manifest"]["version"],
+                "description": first["manifest"]["description"],
+                "_details_markdown":first.get("_details_markdown", ""),
                 "repository":first["repository"], "release":first["tag"],
                 "release_url":first["release_url"], "requires":["wallpaper.packs.v1"],
                 "variants":[{"name":p["name"],"target_resolution":p["manifest"]["target_resolution"],
@@ -241,7 +262,8 @@ def catalog_items(packages, kind):
             m = p["manifest"]
             items.append({
                 "name":p["name"],"title":p["title"],"kind":kind,"author":p["author"],
-                "description":m.get("description",""),"version":m["version"],
+                "description":m["description"],
+                "_details_markdown":p.get("_details_markdown", ""), "version":m["version"],
                 "repository":p["repository"],"release":p["tag"],"release_url":p["release_url"],
                 "requires":["theme.sd.v1"],"asset_url":p["asset_url"],
                 "sha256":p["sha256"],"bytes":p["bytes"],
@@ -262,6 +284,35 @@ def catalog_items(packages, kind):
             unique.append(group[0])
     unique.sort(key=lambda x:(x["title"].casefold(),x["name"]))
     return unique, collisions
+
+
+def publish_extension_details(items, kind, output, catalog_repository, catalog_ref):
+    """Publish release-pinned, sanitized and immutable HTML details pages."""
+    changed = False
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", catalog_repository):
+        raise CatalogError("unsafe catalog repository")
+    for item in items:
+        markdown = item.pop("_details_markdown", "")
+        if not isinstance(markdown, str) or not markdown.strip():
+            continue
+        ident, version = item["name"], item["version"]
+        require(ID.fullmatch(ident) is not None and VERSION.fullmatch(version) is not None,
+                "invalid extension details identity")
+        relative = Path(DETAILS_OUTPUT_DIR) / "extensions" / DETAILS_BY_KIND[kind] / ident / (version + ".html")
+        destination = output / relative
+        rendered = markdown_details_to_html(markdown)
+        if destination.exists():
+            require(destination.read_text(encoding="utf-8") == rendered,
+                    "published extension details changed without a version bump")
+        else:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_text(rendered, encoding="utf-8", newline="\n")
+            changed = True
+        url = (f"https://raw.githubusercontent.com/{catalog_repository}/"
+               f"{urllib.parse.quote(catalog_ref, safe='')}/"
+               f"{relative.as_posix()}")
+        item["details"] = {"url": url, "format": "html"}
+    return changed
 
 
 def write_if_changed(path, payload):
@@ -289,6 +340,7 @@ def build(client, output:Path, legacy_index:Path, catalog_repository="crosspoint
     for kind, (_,_, filename,_,_) in KINDS.items():
         packages = discover(client, kind, None if seeds is None else seeds.get(kind, []), excluded)
         items, duplicate = catalog_items(packages, kind)
+        publish_extension_details(items, kind, output, catalog_repository, catalog_ref)
         collected[kind] = items
         collisions.extend(duplicate)
         write_if_changed(output/filename, {

@@ -26,7 +26,7 @@ One public repo; direct-child `<id>.crosspoint-plugin/` containing `manifest.jso
 
 ## 2. Theme
 
-One public repo; direct-child `<collection-id>.crosspoint-theme/` containing a manifest with `kind: "theme-pack"`, `name`, `title`, `description`, `author`, `version`, `license`, `themes` and a complete `files` allowlist. Include the payload `README.md` and each `themes/<id>/theme.json` plus resources. **No `device.json`, `plugin.js`, or executable scripts**. Theme title in the selector comes from `themes[].title`; choose short device-friendly titles. The payload README is plain, printable ASCII (no emoji, Markdown heading markers), **maximum 2 KiB**. A rich Markdown repository-root README is fine.
+One public repo; direct-child `<collection-id>.crosspoint-theme/` containing a manifest with `kind: "theme-pack"`, `name`, `title`, `description`, `author`, `version`, `license`, `themes` and a complete `files` allowlist. Include the payload `README.md` and packaged `DETAILS.md`, both declared in `files`, and each `themes/<id>/theme.json` plus resources. **No `device.json`, `plugin.js`, or executable scripts**. Theme title in the selector comes from `themes[].title`; choose short device-friendly titles. The payload README is plain, printable ASCII (no emoji, Markdown heading markers), **maximum 2 KiB**. A rich Markdown repository-root README is fine.
 
 Capabilities/primitives exposed by the Razor-Crest SD-theme firmware:
 
@@ -46,11 +46,53 @@ Use the author-hosted validator, tests and packer, and only release a checked ZI
 
 ## 3. Standalone wallpaper pack
 
-One public repo can contain **1–8 direct-child** `<package-id>.crosspoint-wallpaper/` folders; each needs `manifest.json`, `README.md`, and listed files under `wallpapers/`. Each manifest has `kind: "wallpaper-pack"`, `name` (package ID), `collection` (artwork collection ID), `title`, `author`, `version`, `target_resolution`, `images`, and a complete `files` allowlist. In multi-pack repos, `collection` and `target_resolution` are required for **every** package. Multiple resolutions for one collection are variants; separate collections may share a resolution. Do not duplicate the same `(collection, width, height)` combination. Images must be valid native BMPs with declared dimensions, at most 32 per pack, 8 MiB each, 64 MiB per package. No scripts, fonts, themes or plugin entry points. Device README is plain printable ASCII, at most 2 KiB.
+One public repo can contain **1–8 direct-child** `<package-id>.crosspoint-wallpaper/` folders; each needs `manifest.json`, `README.md`, `DETAILS.md`, and listed files under `wallpapers/`. Each manifest has `kind: "wallpaper-pack"`, `name` (package ID), `collection` (artwork collection ID), `title`, `description`, `author`, `version`, `target_resolution`, `images`, and a complete `files` allowlist. In multi-pack repos, `collection` and `target_resolution` are required for **every** package. Multiple resolutions for one collection are variants; separate collections may share a resolution. Do not duplicate the same `(collection, width, height)` combination. Images must be valid native BMPs with declared dimensions, at most 32 per pack, 8 MiB each, 64 MiB per package. No scripts, fonts, themes or plugin entry points. Device README is plain printable ASCII, at most 2 KiB.
 
 `wallpaper.packs.v1` provides bounded SD discovery and verification, a named **Wallpaper Collection** selector under **Settings > Display > Sleep Screen: Custom**, independent pack selection and persistent choice, random image selection and existing timed sleep refresh integration for the chosen collection. The default **All wallpapers** merges `/.sleep` and `/sleep` and retains `/sleep.bmp` precedence. Missing collections fall back safely. Theme Dark/Light galleries and Cover sleep modes remain distinct. The firmware loads **one BMP at a time**, not the whole collection into X3 RAM. It does **not** provide executable hooks, styling, or arbitrary file access.
 
 Run the wallpaper validator and `pack-all`; use topic `crosspoint-wallpaper`. Publish a stable, non-draft, non-prerelease Release with one distinct **`<package-id>-<version>.crosspoint-wallpaper.zip`** per variant, matching every embedded manifest. The firmware selects **one variant matching the actual screen portrait resolution**, never by model name. Each wallpaper collection can be installed separately. See the [wallpaper contract](https://github.com/jadehawk/starwars.crosspoint-wallpaper/blob/main/docs/WALLPAPER_PACK_CONTRACT.md).
+
+## Shared catalog metadata and details contract
+
+For plugins, themes and wallpaper packs alike, keep the `name` identity,
+`title`, `description`, `author` and `version` in the package manifest.
+Declare a device-friendly plain-text `README.md` and a rich Markdown
+`DETAILS.md` in the installable `files` list for theme and wallpaper
+packages. Plugin Hub verifies both from the released ZIP, sanitizes the rich
+description into a versioned HTML page, and publishes `details.url` and
+`details.format`. **Normal tap opens details; Install is a separate action.**
+Installed Themes and Wallpaper Packs show descriptions as subtitles; author
+and version appear in details. A release is not ready until a catalog fixture
+proves that complete end-to-end flow.
+
+## Required pre-release acceptance checks (all three kinds)
+
+A repository is **not release-ready** merely because an archive can be built.
+Before publishing a tag, verify:
+
+1. The payload manifest has stable `name`, readable `title`,
+   **`description`**, `author`, `version`, and every exact ZIP member
+   declared in `files`.
+2. An installed, plain-text `README.md` and a packaged Markdown
+   `DETAILS.md` are present for themes and wallpapers, with valid UTF-8
+   within bounded file sizes. Plugins use the same optional rich-details
+   mechanism and should include it for a comparable catalog experience.
+3. Plugin Hub validates the **release ZIP**, produces the short description
+   from the manifest, and emits an immutable `details.url` and
+   `details.format: html` based on its packaged `DETAILS.md`.
+4. The native browse list displays the short **description**, not the author.
+   A normal tap opens details first; Install/Update is a separate action.
+   Author, version, source and details remain distinguishable.
+5. The installed list shows a description, not an author subtitle; the
+   author's credit is retained in item details. Existing installations
+   continue to work during a format transition.
+6. Wallpaper variants have matching collection metadata and distinct,
+   verified resolutions. Plugin Hub chooses **one** correct variant, not
+   every ZIP or a hard-coded firmware model name.
+7. Run author-side tests, the Plugin Hub catalog fixture suite, firmware
+   inspection, and actual X3/X4Pro touch/button tests before publishing.
+   Keep old release tags immutable; changing the format requires a **new
+   version and tag**.
 
 ## Getting published in Plugin Hub
 
