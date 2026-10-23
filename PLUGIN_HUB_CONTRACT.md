@@ -1,6 +1,6 @@
 # Plugin Hub contract
 
-This document is the authoritative contract for publishing plugins through Plugin Hub and for maintaining Plugin Hub's generated catalogs against the current CrossPoint SD-plugin system.
+This document is the authoritative **plugin** publishing contract. For theme and wallpaper publishing rules, author-side AI instructions, firmware primitives and automated catalog eligibility, see [Build and publish CrossPoint extensions](docs/BUILD_AND_PUBLISH_EXTENSIONS.md) and [v2 catalog schema](docs/EXTENSION_CATALOG_SCHEMA.md). The plugin, theme, and wallpaper formats are separate; do not put `device.json` or `plugin.js` in theme or wallpaper payloads.
 
 The SD-plugin system has not yet shipped in a stable CrossPoint release. This document therefore defines one current contract. It does not describe legacy plugin-system generations or require compatibility with an older released plugin API.
 
@@ -396,20 +396,16 @@ release tag. A `collection` groups all artwork variants; only a duplicate
 For example one repo can provide `starwars-x3`, `starwars-x4plus`,
 `starwarsyoda-x3` and `starwarsyoda-x4plus`.
 
-**Installer work remains:** Razor-Crest must opt into the new index,
-filter lists/items by exposed firmware capabilities and select one matching
-asset **per user-selected collection**. It must not download all variants
-or hard-code device model names. Native firmware currently allows eight
-installed wallpaper packs, but exposes no screen dimensions in `/api/status`.
+**Firmware installer status:** Razor-Crest development firmware now has an opt-in capability-aware catalog consumer and validated package-kind installers under hardware testing; upstream stock CrossPoint does **not** yet have SD theme or wallpaper-pack support. It selects one matching portrait resolution variant **per user-selected collection**, without hard-coded device names. Native firmware permits eight installed wallpaper packs but exposes no screen dimensions in `/api/status`. Do not confuse catalog publication with firmware capability availability.
 
 See [the extended catalog schema](docs/EXTENSION_CATALOG_SCHEMA.md) for
 fields, data examples, URLs and the firmware-facing integration contract.
 
 ## 13. Plugin Hub release status
 
-Plugin Hub `0.1.9` is the current production Plugin Hub release.
+Plugin Hub `0.1.10` is the current published Plugin Hub version following release promotion.
 
-- `v0.1.9` is the current stable GitHub Release;
+- `v0.1.10` is the current stable GitHub Release;
 - the `stable` branch is the production bootstrap pointer; publishing a release aligns it to the latest `main` commit once the packaged manifest, device settings and browser plugin match the newest published release. Subsequent catalog refreshes also synchronize `stable`, preventing it from falling behind `main`; unreleased runtime changes block synchronization;
 - firmware bootstrap installs Plugin Hub from `stable`;
 - Plugin Hub's generated Community entry resolves from its latest stable Release after catalog refresh.

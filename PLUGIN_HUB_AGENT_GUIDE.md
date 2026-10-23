@@ -1,6 +1,6 @@
 # Plugin Hub AI Agent Guide
 
-Use this document when asking an AI coding agent to make a CrossPoint plugin repository ready for Plugin Hub.
+Use this document when asking an AI coding agent to make a CrossPoint **plugin** repository ready for Plugin Hub. To author an SD theme or a standalone wallpaper pack instead, use [Build and publish CrossPoint extensions](docs/BUILD_AND_PUBLISH_EXTENSIONS.md), including its matching authoring contracts and AI instructions. Themes and wallpaper packs are declarative data, not `plugin.js` or `device.json` plugins.
 
 `PLUGIN_HUB_CONTRACT.md` is authoritative. This guide explains the preferred workflow for producing a maintainable repository that conforms to that contract without changing runtime behavior unnecessarily.
 

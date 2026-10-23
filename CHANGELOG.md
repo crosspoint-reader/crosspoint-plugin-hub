@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.10 (unreleased; firmware integration testing)
+
+- Add optional `browse.capability_lists_url` to the on-reader Plugin Hub manifest for capability-gated plugin, theme and wallpaper discovery.
+- Add a self-contained plugin/theme/wallpaper publishing and AI-agent authoring guide, runtime capability primitives and known compatible-firmware table.
+- Preserve legacy `browse.lists_url` unchanged so existing CrossPoint firmware retains the plugin-only catalog.
+- The corresponding Razor-Crest catalog consumer and validated theme/wallpaper ZIP installers require hardware testing before publishing this version.
+
 ## 0.1.9 (2026-10-22)
 
 - Generate separate capability-gated Community Themes and Community Wallpaper Packs catalogs from stable GitHub releases without changing legacy Community Plugins catalogs.

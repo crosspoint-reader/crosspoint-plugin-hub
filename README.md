@@ -5,11 +5,13 @@ Plugin Hub is a CrossPoint SD-card plugin for discovering, installing, updating,
 Plugin Hub currently exposes one legacy user-facing catalog: **Community Plugins**. Valid discovered plugins are published there automatically. The three-hour workflow now also publishes opt-in, capability-aware Themes and Wallpaper Packs catalogs for upcoming firmware support. Older firmware and the existing Plugin Hub installer continue using the plugin-only catalog.
 
 > [!NOTE]
-> Plugin Hub `0.1.9` is the current stable Plugin Hub release. Use a recent **CrossPoint Nightly** with the Plugin System enabled for the on-reader catalog, including dynamically fetched catalog lists through `browse.lists_url`. The browser interface (`plugin.js`) and on-reader interface (`device.json`) are complementary and work independently wherever the firmware exposes their standard plugin capabilities.
+> Plugin Hub `0.1.10` is the current stable Plugin Hub release, adding opt-in capability-aware catalogs without changing legacy plugin installation. Use a recent **CrossPoint Nightly** with the Plugin System enabled for the on-reader catalog, including dynamically fetched catalog lists through `browse.lists_url`. The browser interface (`plugin.js`) and on-reader interface (`device.json`) are complementary and work independently wherever the firmware exposes their standard plugin capabilities.
 
 ## Documentation
 
-There are two canonical technical documents:
+Start here for all three extension types (plugins, themes, wallpaper packs): **[Build and publish CrossPoint extensions](docs/BUILD_AND_PUBLISH_EXTENSIONS.md)**, including a copy/paste AI-agent brief, exact required package layouts, publication eligibility, capability primitives, and known firmware support.
+
+The plugin-specific technical documents are:
 
 - [`PLUGIN_HUB_CONTRACT.md`](PLUGIN_HUB_CONTRACT.md) — authoritative Plugin Hub publishing, catalog, manifest, capability, workflow, and repository contract.
 - [`PLUGIN_HUB_AGENT_GUIDE.md`](PLUGIN_HUB_AGENT_GUIDE.md) — instructions for an AI coding agent to organize a plugin repository for automatic discovery and long-term maintainability.
@@ -45,7 +47,7 @@ The production catalog workflow:
 - regenerates `catalog-lists.json` so shard-layout changes do not require a Plugin Hub release;
 - generates optional item-details HTML and versioned release-asset mirrors when required.
 
-The workflow runs every three hours and can also be started manually. Its new extension outputs are community-themes.json, community-wallpapers.json and catalog-lists-capabilities.json. Those are not yet used for installation: see [Extended catalog schema](docs/EXTENSION_CATALOG_SCHEMA.md).
+The workflow runs every three hours and can also be started manually. Its new extension outputs are community-themes.json, community-wallpapers.json and catalog-lists-capabilities.json. They are consumed by firmware that implements the opt-in capability-aware catalog; stock CrossPoint does not yet install themes or wallpaper packs. See [Extended catalog schema](docs/EXTENSION_CATALOG_SCHEMA.md).
 
 ## CrossPoint integration
 

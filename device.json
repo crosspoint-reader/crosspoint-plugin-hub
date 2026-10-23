@@ -18,6 +18,7 @@
       "details_format": "details.format"
     },
     "lists_url": "https://raw.githubusercontent.com/crosspoint-reader/crosspoint-plugin-hub/main/catalog-lists.json",
+    "capability_lists_url": "https://raw.githubusercontent.com/crosspoint-reader/crosspoint-plugin-hub/main/catalog-lists-capabilities.json",
     "compatibility": {
       "firmware_family": "compatibility.firmware_family",
       "plugin_api_min": "compatibility.plugin_api_min",
@@ -32,5 +33,5 @@
       "subdir": "{id}"
     }
   },
-  "version": "0.1.9"
+  "version": "0.1.10"
 }

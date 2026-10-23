@@ -55,6 +55,17 @@ def archive(name, kind, collection=None, resolution=(2, 3), tamper=None):
 
 
 class ExtensionCatalogTests(unittest.TestCase):
+    def test_device_manifest_keeps_legacy_and_opt_in_v2_indexes(self):
+        root = Path(__file__).resolve().parents[1]
+        manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+        device = json.loads((root / "device.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["version"], device["version"])
+        browse = device["browse"]
+        self.assertEqual(browse["lists_url"].rsplit("/", 1)[-1], "catalog-lists.json")
+        self.assertEqual(browse["capability_lists_url"].rsplit("/", 1)[-1],
+                         "catalog-lists-capabilities.json")
+        self.assertEqual(browse["items"], "plugins")
+
     def test_validate_wallpaper_release_and_size(self):
         _, raw = archive("starwars-x3", "wallpaper-pack", "starwars", (528,792))
         result = ext.check_asset(raw,"starwars-x3","wallpaper-pack","v0.1.1")

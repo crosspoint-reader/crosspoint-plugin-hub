@@ -1,7 +1,6 @@
 # Capability-aware catalog schema (v2)
 
-The scheduled Plugin Hub workflow now generates the data below. Firmware and
-Plugin Hub installation support for themes/wallpapers is **not yet implemented**.
+The scheduled Plugin Hub workflow generates the opt-in data below. A Razor-Crest development firmware consumer can browse and install extensions with matching runtime capabilities; **upstream CrossPoint does not yet implement SD themes or standalone wallpaper packs**. Publication alone does not grant firmware compatibility. See [complete developer and AI agent guide](BUILD_AND_PUBLISH_EXTENSIONS.md).
 
 ## URLs
 
@@ -92,7 +91,4 @@ the declared target resolutions. Release download URL, size and SHA-256 are
 recorded. Repository blacklists apply. Colliding identities are quarantined
 in duplicate-extension-ids.json; other valid collections remain published.
 
-The future firmware installer must independently verify ZIP content and
-checksum, route each kind to its proper SD root and protect against partial
-installation. The current Plugin Hub device.json and WebUI installer remain
-plugin-only. Nothing changes the legacy catalog-list URL yet.
+Compatible firmware must independently verify ZIP content and checksum, route each kind to its proper SD root, protect against partial installs, and only offer supported capabilities. Plugin Hub `device.json` adds optional `browse.capability_lists_url`; its legacy `browse.lists_url` stays unchanged and the browser WebUI plugin installer remains plugin-only. Only the new firmware's opt-in consumer uses the extended index.
