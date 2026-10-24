@@ -1052,6 +1052,19 @@ class CatalogBuilderTests(unittest.TestCase):
         self.assertNotEqual(partitions[0].label, "")
         self.assertNotEqual(partitions[1].label, "")
 
+    def test_partition_community_plugins_caps_rows_for_native_page_size(self):
+        plugins = self._synthetic_community_plugins()[:17]
+        partitions = build_catalog.partition_community_plugins(plugins, 1024 * 1024)
+
+        self.assertEqual(len(partitions), 2)
+        for part in partitions:
+            self.assertLessEqual(len(part.plugins), 16)
+        self.assertEqual(
+            [plugin["name"] for part in partitions for plugin in part.plugins],
+            [plugin["name"] for plugin in plugins],
+        )
+        self.assertNotEqual(partitions[0].title, partitions[1].title)
+
     def test_partition_community_plugins_expands_to_three_ranges_when_needed(self):
         plugins = self._synthetic_community_plugins()
         full_size = build_catalog.rendered_catalog_size(plugins, "Community Plugins")
