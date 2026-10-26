@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -159,7 +160,8 @@ def shard_filename(base_filename: str, partition: CommunityPartition) -> str:
     stem, dot, suffix = base_filename.rpartition(".")
     if not dot:
         stem, suffix = base_filename, ""
-    slug = partition.label.lower().replace("#", "other")
+    # Split labels such as "All 1/2" carry characters that are not safe in a file name.
+    slug = re.sub(r"[^a-z0-9]+", "-", partition.label.lower().replace("#", "other")).strip("-")
     return f"{stem}-{slug}{dot}{suffix}"
 
 

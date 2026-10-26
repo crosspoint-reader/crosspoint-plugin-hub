@@ -1126,6 +1126,28 @@ class CatalogBuilderTests(unittest.TestCase):
                 self.assertTrue((root / filename).exists())
 
 
+    def test_write_community_catalogs_writes_split_partitions(self):
+        plugins = self._synthetic_community_plugins()[:17]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            community = root / "community-catalog.json"
+            index = root / "catalog-lists.json"
+
+            build_catalog.write_community_catalogs(
+                community,
+                index,
+                plugins,
+                "crosspoint-reader/crosspoint-plugin-hub",
+                "main",
+                1024 * 1024,
+            )
+
+            payload = json.loads(index.read_text(encoding="utf-8"))
+            filenames = [entry["url"].rsplit("/", 1)[-1] for entry in payload["lists"]]
+            self.assertEqual(filenames, ["community-catalog-all-1-2.json", "community-catalog-all-2-2.json"])
+            written = [json.loads((root / name).read_text(encoding="utf-8")) for name in filenames]
+            self.assertEqual(sum(len(catalog["plugins"]) for catalog in written), 17)
+
 
 if __name__ == "__main__":
     unittest.main()
