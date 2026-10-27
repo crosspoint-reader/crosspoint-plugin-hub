@@ -294,6 +294,39 @@ def normalize_compatibility(value: Any) -> dict[str, Any] | None:
         if tokens is not None:
             normalized[field] = tokens
 
+    # Advisory hardware preferences affect catalog visibility, not installation.
+    ids: dict[str, str] = {}
+    for field in ("devices", "exclude_devices"):
+        csv = normalize_compatibility_csv_field(value.get(field), field)
+        if csv is not None:
+            values = csv.split(",")
+            if len(values) > 20 or any(not re.fullmatch(r"[a-z][a-z0-9_-]{0,31}", item) for item in values):
+                raise CatalogError(f"compatibility.{field} has invalid device IDs")
+            ids[field] = csv
+            normalized[field] = csv
+    preferred = value.get("recommended")
+    psram_mb = None
+    if preferred is not None:
+        if not isinstance(preferred, dict) or set(preferred) - {"min_psram_mb"}:
+            raise CatalogError("compatibility.recommended has unknown fields")
+        psram_mb = preferred.get("min_psram_mb")
+        if psram_mb is not None:
+            if type(psram_mb) is not int or not 0 <= psram_mb <= 64:
+                raise CatalogError("compatibility.recommended.min_psram_mb must be 0..64")
+            normalized["recommended"] = {"min_psram_mb": psram_mb}
+    clauses = []
+    if "devices" in ids:
+        clauses.append("models=" + ids["devices"].replace(",", "|"))
+    if "exclude_devices" in ids:
+        clauses.append("exclude=" + ids["exclude_devices"].replace(",", "|"))
+    if psram_mb is not None:
+        clauses.append("psram_mb=" + str(psram_mb))
+    if clauses:
+        advisory = ";".join(clauses)
+        if len(advisory) > 240:
+            raise CatalogError("compatibility advisory exceeds 240 bytes")
+        normalized["advisory"] = advisory
+
     api_min = value.get("plugin_api_min")
     if api_min is not None:
         if isinstance(api_min, bool):

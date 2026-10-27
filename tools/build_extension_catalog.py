@@ -13,7 +13,9 @@ import io
 import json
 import os
 import re
+import struct
 import sys
+import zlib
 import urllib.parse
 import zipfile
 from collections import defaultdict
@@ -22,7 +24,7 @@ from pathlib import Path
 from build_catalog import (GitHubClient, GitHubRateLimitError, CatalogError,
                            load_blacklist, is_blacklisted_repository,
                            markdown_details_to_html, DETAILS_OUTPUT_DIR,
-                           MAX_DETAILS_SOURCE_BYTES)
+                           MAX_DETAILS_SOURCE_BYTES, normalize_compatibility)
 
 ROOT = Path(__file__).resolve().parents[1]
 ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")
@@ -68,12 +70,13 @@ def safe_manifest(manifest, ident, kind, tag):
             0 < len(manifest["author"]) <= 120, "invalid author")
     require(isinstance(manifest.get("description"), str) and
             0 < len(manifest["description"]) <= 180, "missing or invalid short description")
+    normalize_compatibility(manifest.get("compatibility"))
     declared = manifest.get("files")
     require(isinstance(declared, list) and 2 <= len(declared) <= MAX_MEMBERS and
             all(safe_path(n) for n in declared) and len(set(declared)) == len(declared) and
             {"manifest.json", "README.md", "DETAILS.md"}.issubset(declared), "unsafe or invalid manifest files")
     if kind == "wallpaper-pack":
-        require(len(set(manifest) - {"kind", "name", "collection", "title", "description", "author", "version", "target_resolution", "images", "files"}) == 0,
+        require(len(set(manifest) - {"kind", "name", "collection", "title", "description", "author", "version", "target_resolution", "images", "files", "compatibility"}) == 0,
                 "unknown wallpaper manifest keys")
         images = manifest.get("images")
         require(isinstance(images, list) and 1 <= len(images) <= 32 and
@@ -90,6 +93,10 @@ def safe_manifest(manifest, ident, kind, tag):
                 all(type(resolution[k]) is int and 0 < resolution[k] <= 3072 for k in ("width", "height")),
                 "wallpaper variant requires target_resolution")
     else:
+        resolution = manifest.get("target_resolution")
+        require(isinstance(resolution, dict) and set(resolution) == {"width", "height"} and
+                all(type(resolution[k]) is int and 0 < resolution[k] <= 3072 for k in ("width", "height")),
+                "theme variant requires target_resolution")
         themes = manifest.get("themes")
         require(isinstance(themes, list) and 1 <= len(themes) <= 16, "missing or invalid themes")
         for theme in themes:
@@ -120,6 +127,25 @@ def verify_bmp(raw, dimensions):
             "truncated BMP")
 
 
+def sleep_image_path(relative, theme_id):
+    prefix = f"themes/{theme_id}/sleep/"
+    if not relative.startswith(prefix):
+        return False
+    name = relative[len(prefix):]
+    return (5 <= len(name) <= 84 and not name.startswith(".") and ".." not in name and
+            re.fullmatch(r"[A-Za-z0-9_-][A-Za-z0-9_.-]*\.(?:cpb|bmp)", name) is not None)
+
+
+def verify_sleep_cpb(raw, resolution):
+    require(len(raw) >= 20, "theme sleep CPB header missing")
+    magic, version, flags, width, height, stride, size, checksum = struct.unpack_from("<4sBBHHHII", raw)
+    require(magic == b"CPTB" and version == 1 and flags == 1 and
+            width == resolution["width"] and height == resolution["height"] and
+            stride == (width + 7) // 8 and size == len(raw) - 20 and
+            size == stride * height and (zlib.crc32(raw[20:]) & 0xffffffff) == checksum,
+            "theme sleep bitmap CRC or resolution invalid")
+
+
 def check_asset(raw: bytes, ident: str, kind: str, tag: str):
     suffix = KINDS[kind][0]
     expected_prefix = f"{ident}.{suffix}/"
@@ -127,7 +153,8 @@ def check_asset(raw: bytes, ident: str, kind: str, tag: str):
     try:
         archive = zipfile.ZipFile(io.BytesIO(raw))
         infos = archive.infolist()
-        require(2 <= len(infos) <= MAX_MEMBERS, "invalid ZIP member count")
+        require(len(infos) >= 2 and (kind == "theme-pack" or len(infos) <= MAX_MEMBERS),
+                "invalid ZIP member count")
         names = [i.filename for i in infos]
         require(len(names) == len(set(names)), "duplicate archive member paths")
         require(all(n.startswith(expected_prefix) and safe_path(n) and not n.endswith("/") for n in names),
@@ -140,7 +167,30 @@ def check_asset(raw: bytes, ident: str, kind: str, tag: str):
         contents = {i.filename[len(expected_prefix):]: archive.read(i) for i in infos}
         manifest = json.loads(contents["manifest.json"].decode("utf-8"))
         declared = safe_manifest(manifest, ident, kind, tag)
-        require(set(contents) == set(declared), "release ZIP does not exactly match manifest file list")
+        unexpected = set(contents) - set(declared)
+        if kind == "theme-pack":
+            for theme in manifest["themes"]:
+                meta = json.loads(contents[theme["path"]].decode("utf-8"))
+                assets = meta.get("assets", {})
+                gallery = assets.get("sleep_art")
+                prefix = f"themes/{theme['id']}/sleep"
+                if gallery is None:
+                    continue
+                require(gallery == prefix, "theme sleep gallery must be a scoped directory")
+                members = {f for f in unexpected if sleep_image_path(f, theme["id"])}
+                require(bool(members), "theme sleep directory cannot be empty")
+                types = {name.rsplit('.', 1)[-1] for name in members}
+                require(len(types) == 1, "theme sleep gallery cannot mix BMP and CPB images")
+                require(("bmp" in types) == ("theme.sleep-grayscale.v1" in theme["requires"]),
+                        "theme grayscale gallery capability mismatch")
+                for member in members:
+                    if member.endswith(".bmp"):
+                        verify_bmp(contents[member], manifest["target_resolution"])
+                    else:
+                        verify_sleep_cpb(contents[member], manifest["target_resolution"])
+                unexpected -= members
+        require(not unexpected and set(declared).issubset(contents),
+                "release ZIP contains unrecognized files or omits required metadata")
         details_bytes = contents["DETAILS.md"]
         require(0 < len(details_bytes) <= MAX_DETAILS_SOURCE_BYTES,
                 "DETAILS.md missing or exceeds size limit")
@@ -180,6 +230,10 @@ def stable_assets(client, repo, kind):
         require(filename.endswith(ending), "release asset naming/version mismatch")
         ident = filename[:-len(ending)]
         require(ID.fullmatch(ident) is not None, "unsafe package ID in release asset name")
+        # Theme release filename carries a resolution variant suffix, while
+        # the ZIP root and embedded name carry the *stable* theme identity.
+        # Never assume that only two device sizes can ever exist.
+        package_id = ident
         url = asset.get("browser_download_url")
         require(isinstance(url, str) and url.startswith(
                 f"https://github.com/{full_name}/releases/download/{urllib.parse.quote(tag, safe='')}/"),
@@ -188,12 +242,25 @@ def stable_assets(client, repo, kind):
                 0 < asset["size"] <= MAX_ZIP_BYTES, "release asset too large")
         raw = client.fetch_bytes_url(url, MAX_ZIP_BYTES)
         require(len(raw) == asset["size"], "downloaded ZIP size mismatch")
-        manifest = check_asset(raw, ident, kind, tag)
+        if kind == "theme-pack":
+            try:
+                with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+                    roots = {i.filename.split("/", 1)[0] for i in archive.infolist()}
+            except zipfile.BadZipFile as exc:
+                raise CatalogError("corrupt theme ZIP") from exc
+            require(len(roots) == 1, "theme variant has ambiguous ZIP roots")
+            root_name = next(iter(roots))
+            require(root_name.endswith(".crosspoint-theme"), "missing theme ZIP root")
+            package_id = root_name[:-len(".crosspoint-theme")]
+            require(ID.fullmatch(package_id) is not None and
+                    ident.startswith(package_id + "-") and len(ident) > len(package_id) + 1,
+                    "theme release asset identity must extend the stable collection ID")
+        manifest = check_asset(raw, package_id, kind, tag)
         with zipfile.ZipFile(io.BytesIO(raw)) as verified_zip:
-            member = f"{ident}.{suffix}/DETAILS.md"
+            member = f"{package_id}.{suffix}/DETAILS.md"
             details_markdown = verified_zip.read(member).decode("utf-8")
         results.append({
-            "name": ident, "title": manifest["title"], "author": manifest["author"],
+            "name": package_id, "variant_name": ident, "title": manifest["title"], "author": manifest["author"],
             "manifest": manifest, "asset_url": url, "bytes": len(raw),
             "sha256": hashlib.sha256(raw).hexdigest(), "tag": tag,
             "release_url": release.get("html_url", ""), "repository": full_name,
@@ -238,8 +305,11 @@ def catalog_items(packages, kind):
                             p["manifest"]["target_resolution"]["height"]) for p in variants]
             # One catalog collection must not combine conflicting publisher
             # identity or metadata across display variants.
-            metadata = {(v["manifest"]["version"], v["author"],
-                         v["manifest"]["description"]) for v in variants}
+            metadata = {
+                (v["manifest"]["version"], v["author"], v["manifest"]["description"],
+                 json.dumps(normalize_compatibility(v["manifest"].get("compatibility")), sort_keys=True))
+                for v in variants
+            }
             if len(metadata) != 1 or len(set(names)) != len(names) or len(set(resolutions)) != len(resolutions):
                 collisions.append({"kind":kind,"collection":collection,"repository":variants[0]["repository"],
                                    "reason":"duplicate package ID or resolution in collection"})
@@ -252,23 +322,49 @@ def catalog_items(packages, kind):
                 "_details_markdown":first.get("_details_markdown", ""),
                 "repository":first["repository"], "release":first["tag"],
                 "release_url":first["release_url"], "requires":["wallpaper.packs.v1"],
+                **({"compatibility":normalize_compatibility(first["manifest"]["compatibility"])}
+                   if first["manifest"].get("compatibility") else {}),
                 "variants":[{"name":p["name"],"target_resolution":p["manifest"]["target_resolution"],
                              "asset_url":p["asset_url"],"sha256":p["sha256"],"bytes":p["bytes"]}
                             for p in sorted(variants,key=lambda v:v["name"])],
             })
     else:
+        grouped = defaultdict(list)
+        for package in packages:
+            grouped[(package["repository"].lower(), package["name"])].append(package)
         items = []
-        for p in packages:
-            m = p["manifest"]
+        for (_, collection), variants in grouped.items():
+            resolutions = [(v["manifest"]["target_resolution"]["width"],
+                            v["manifest"]["target_resolution"]["height"]) for v in variants]
+            metadata = {
+                (v["manifest"]["version"], v["author"], v["title"],
+                 v["manifest"]["description"],
+                 json.dumps(v["manifest"]["themes"], sort_keys=True),
+                 json.dumps(normalize_compatibility(v["manifest"].get("compatibility")), sort_keys=True),
+                 v["_details_markdown"])
+                for v in variants
+            }
+            if len(metadata) != 1 or len(set(resolutions)) != len(resolutions):
+                collisions.append({"kind": kind, "collection": collection, "repository": variants[0]["repository"],
+                                   "reason": "theme variant metadata or resolution conflict"})
+                continue
+            first = variants[0]
+            m = first["manifest"]
             items.append({
-                "name":p["name"],"title":p["title"],"kind":kind,"author":p["author"],
-                "description":m["description"],
-                "_details_markdown":p.get("_details_markdown", ""), "version":m["version"],
-                "repository":p["repository"],"release":p["tag"],"release_url":p["release_url"],
-                "requires":["theme.sd.v1"],"asset_url":p["asset_url"],
-                "sha256":p["sha256"],"bytes":p["bytes"],
-                "themes":[{"id":t["id"],"title":t.get("title",t["id"]),
-                           "requires":t["requires"]} for t in m["themes"]]
+                "name": collection, "title": first["title"], "kind": kind, "author": first["author"],
+                "description": m["description"],
+                "_details_markdown": first.get("_details_markdown", ""), "version": m["version"],
+                "repository": first["repository"], "release": first["tag"],
+                "release_url": first["release_url"], "requires": ["theme.sd.v1"],
+                **({"compatibility": normalize_compatibility(m["compatibility"])}
+                   if m.get("compatibility") else {}),
+                "themes": [{"id": t["id"], "title": t.get("title", t["id"]),
+                            "requires": t["requires"]} for t in m["themes"]],
+                "variants": [
+                    {"name": p["variant_name"], "target_resolution": p["manifest"]["target_resolution"],
+                     "asset_url": p["asset_url"], "sha256": p["sha256"], "bytes": p["bytes"]}
+                    for p in sorted(variants, key=lambda v: v["variant_name"])
+                ],
             })
     # Ambiguous identities across repositories are quarantined, not arbitrarily chosen.
     by_name = defaultdict(list)

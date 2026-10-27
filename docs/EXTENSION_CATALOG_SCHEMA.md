@@ -36,6 +36,10 @@ or rewritten to include unsupported package kinds.
 Community Themes has requires=[theme.sd.v1], items=items.
 Community Wallpaper Packs has requires=[wallpaper.packs.v1], items=items.
 
+## Optional advisory device metadata
+
+Publishers may provide `compatibility.devices`, `compatibility.exclude_devices`, and `compatibility.recommended.min_psram_mb`. The catalog generator validates these optional hardware recommendations and serializes `compatibility.advisory` for consumers that support advisory filtering. This is **discovery-only**, never an installer restriction. Stock firmware and other consumers without hardware information retain their normal plugin catalog view. These are publishing fields, not CrossPoint firmware rendering primitives.
+
 ## Theme catalog
 
 community-themes.json is a JSON object containing:
@@ -46,12 +50,26 @@ community-themes.json is a JSON object containing:
 - generated_at: UTC timestamp, retained when the content does not change
 - items: list of theme collection entries
 
-Each theme collection entry contains name, title, kind, author, description,
-version, repository, release, release_url, requires, asset_url, sha256, bytes,
-and themes. The themes array contains id, title and its own requires array.
-Consumers must check both the list-level and per-theme capabilities. The
-release asset is an immutable, verified, single-root ZIP installed at
-/.crosspoint/themes/<name>.crosspoint-theme/.
+Each theme collection entry contains `name`, `title`, `kind`, `author`,
+`description`, `version`, `repository`, `release`, `release_url`,
+`requires`, `themes`, and `variants`. The `themes` array contains its
+own IDs, titles and capabilities.
+
+Each theme `variants` entry has `name`, `target_resolution: {width,height}`,
+`asset_url`, `sha256`, and `bytes`, matching wallpaper variants. The theme
+collection ID and every embedded `manifest.name` are **identical** (for
+example, `snoopy`). `variants[].name` is only the release filename prefix,
+such as `snoopy-x3` or `snoopy-x4plus`; it is not an installed theme ID.
+Each variant declares `manifest.target_resolution` and lists only the
+resolution's resources. Duplicate resolutions and contradictory metadata
+are rejected.
+
+The device selects exactly one ZIP for its measured display resolution and
+verifies its checksum, metadata, and file list before installation. Regardless
+of ZIP filename, the archive root is `<name>.crosspoint-theme/` and the
+installed folder is `/.crosspoint/themes/<name>.crosspoint-theme/`.
+No firmware name is hard-coded in device selection.
+
 
 ## Wallpaper catalog
 
@@ -110,7 +128,11 @@ crosspoint-wallpaper GitHub topics. It validates the latest non-draft,
 non-prerelease GitHub releases, version matching, per-package ZIP names,
 ZIP safety, the embedded manifests and file allowlists, BMP dimensions and
 the declared target resolutions. Release download URL, size and SHA-256 are
-recorded. Repository blacklists apply. Colliding identities are quarantined
+recorded. Theme sleep galleries support either legacy `.cpb` images or native grayscale
+`.bmp` images, but not both in one gallery. BMP galleries require the theme to
+advertise `theme.sleep-grayscale.v1`; the catalog validates each image against
+the declared target resolution. Repository blacklists apply. Colliding identities are quarantined
 in duplicate-extension-ids.json; other valid collections remain published.
 
 Compatible firmware must independently verify ZIP content and checksum, route each kind to its proper SD root, protect against partial installs, and only offer supported capabilities. Plugin Hub `device.json` adds optional `browse.capability_lists_url`; its legacy `browse.lists_url` stays unchanged and the browser WebUI plugin installer remains plugin-only. Only the new firmware's opt-in consumer uses the extended index.
+

@@ -396,16 +396,17 @@ release tag. A `collection` groups all artwork variants; only a duplicate
 For example one repo can provide `starwars-x3`, `starwars-x4plus`,
 `starwarsyoda-x3` and `starwarsyoda-x4plus`.
 
-**Firmware installer status:** Razor-Crest development firmware now has an opt-in capability-aware catalog consumer and validated package-kind installers under hardware testing; upstream stock CrossPoint does **not** yet have SD theme or wallpaper-pack support. It selects one matching portrait resolution variant **per user-selected collection**, without hard-coded device names. Native firmware permits eight installed wallpaper packs but exposes no screen dimensions in `/api/status`. Do not confuse catalog publication with firmware capability availability.
+**Firmware support:** Stock CrossPoint does **not** currently support SD theme or wallpaper packs; catalog publication does not imply installability. Extended list entries are capability-gated. Firmware-specific primitives, UI rules, memory constraints, and installers belong in their implementing firmware contracts, such as [Razor-Crest's SD extension contract](https://github.com/jadehawk/Razor-Crest/blob/razor-crest/docs/sd-extension-contracts.md).
 
 See [the extended catalog schema](docs/EXTENSION_CATALOG_SCHEMA.md) for
 fields, data examples, URLs and the firmware-facing integration contract.
 
 ## 13. Plugin Hub release status
 
-Plugin Hub `0.1.10` is the current published Plugin Hub version following release promotion.
+Plugin Hub `0.1.11` is the latest published version; `0.1.12` changes are proposed here and are not released until the upstream maintainer publishes a matching release.
 
-- `v0.1.10` is the current stable GitHub Release;
+- `v0.1.11` is the current stable GitHub Release;
 - the `stable` branch is the production bootstrap pointer; publishing a release aligns it to the latest `main` commit once the packaged manifest, device settings and browser plugin match the newest published release. Subsequent catalog refreshes also synchronize `stable`, preventing it from falling behind `main`; unreleased runtime changes block synchronization;
 - firmware bootstrap installs Plugin Hub from `stable`;
 - Plugin Hub's generated Community entry resolves from its latest stable Release after catalog refresh.
+

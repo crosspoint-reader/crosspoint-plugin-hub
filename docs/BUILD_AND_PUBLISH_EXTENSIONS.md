@@ -28,27 +28,16 @@ One public repo; direct-child `<id>.crosspoint-plugin/` containing `manifest.jso
 
 One public repo; direct-child `<collection-id>.crosspoint-theme/` containing a manifest with `kind: "theme-pack"`, `name`, `title`, `description`, `author`, `version`, `license`, `themes` and a complete `files` allowlist. Include the payload `README.md` and packaged `DETAILS.md`, both declared in `files`, and each `themes/<id>/theme.json` plus resources. **No `device.json`, `plugin.js`, or executable scripts**. Theme title in the selector comes from `themes[].title`; choose short device-friendly titles. The payload README is plain, printable ASCII (no emoji, Markdown heading markers), **maximum 2 KiB**. A rich Markdown repository-root README is fine.
 
-Capabilities/primitives exposed by the Razor-Crest SD-theme firmware:
+Plugin Hub defines **publication metadata and catalog compatibility checks**, not firmware rendering primitives. Themes declare capability identifiers; firmware that does not advertise them must not offer installation. Layout operations, fonts, artwork roles, sleep scenes, and UI controls belong in the implementing firmware's contracts, such as the [Razor-Crest SD-extension contract](https://github.com/jadehawk/Razor-Crest/blob/razor-crest/docs/sd-extension-contracts.md). They are not stock CrossPoint Plugin Hub primitives.
 
-| Capability | Theme authoring primitive |
-| --- | --- |
-| `theme.sd.v1` | Bounded SD pack discovery and manifest/capability checks; Settings > Display > UI Theme and Classic fallback |
-| `theme.metrics.v1` | Bounded `ThemeMetrics` layout and spacing overrides; check exact host-validator allowlist |
-| `theme.images.v1` | Versioned monochrome 1-bit `.cpb` images; roles `header_emblem`, `home_hero`, `boot_art`, `sleep_art`, `sleep_emblem` |
-| `theme.composition.v1` | Declarative regions `header`, `home`, `boot`, `sleep`, `hints` and operations `fill`, `rect`, `bitmap`, `text`, `line`, `book-card`, `progress` |
-| `theme.fonts.v1` | Optional bounded monochrome v4 `.cpfont` UI glyph resources; stock font fallback |
-| `theme.font-family.v1` | One UI font or `small`/`regular`/`large`/`display` font-family sizes; book-reading fonts unaffected |
-| `theme.settings-navigation.v1` | Default List/Tabs Settings preference, subordinate to the user's override |
+Publish **one independently validated archive per supported portrait resolution** from a theme source repository. For example, asset filenames may be `<name>-x3-<version>.crosspoint-theme.zip` for 528 × 792 and `<name>-x4plus-<version>.crosspoint-theme.zip` for 480 × 800. Each archive contains only the assets for its declared `manifest.target_resolution`, with its own exact file list. The ZIP root and embedded `manifest.name` must be the stable `<name>.crosspoint-theme/`, without any resolution suffix. Publish the variants together under one stable release tag `v<manifest-version>` with GitHub topic `crosspoint-theme`. Plugin Hub groups them into one listing; capable firmware selects a matching archive using measured display resolution. Do not infer firmware support from model names.
 
-Additional supported theme properties: `reference` portrait width/height and `adapt` `center-crop` or `scale-to-fit`; required style fields `header_background`, `header_foreground`, `selection`, `row_separators`, `corners`, `chamfer_cut`; optional chamfer cut variants and `settings_navigation`. Text sources are **only** `screen_title`, `date`, `device_name`, `book_title`, `book_author`, `progress_percent`, `tagline`, `loading_percent`. A scene cannot execute code or invent callbacks. Multiple `sleep_art` entries rotate for regular Dark/Light sleep entry, **not timed Custom sleep wakeups**. Full field/operation bounds are in the [theme contract](https://github.com/jadehawk/halo.crosspoint-theme/blob/main/docs/THEME_CONTRACT.md).
-
-Use the author-hosted validator, tests and packer, and only release a checked ZIP containing exactly one installable folder. Add GitHub topic `crosspoint-theme`, stable Release tag `v<manifest-version>`, and the asset **`<name>-<version>.crosspoint-theme.zip`**. The catalog scanner independently validates and records checksum and URL.
 
 ## 3. Standalone wallpaper pack
 
 One public repo can contain **1–8 direct-child** `<package-id>.crosspoint-wallpaper/` folders; each needs `manifest.json`, `README.md`, `DETAILS.md`, and listed files under `wallpapers/`. Each manifest has `kind: "wallpaper-pack"`, `name` (package ID), `collection` (artwork collection ID), `title`, `description`, `author`, `version`, `target_resolution`, `images`, and a complete `files` allowlist. In multi-pack repos, `collection` and `target_resolution` are required for **every** package. Multiple resolutions for one collection are variants; separate collections may share a resolution. Do not duplicate the same `(collection, width, height)` combination. Images must be valid native BMPs with declared dimensions, at most 32 per pack, 8 MiB each, 64 MiB per package. No scripts, fonts, themes or plugin entry points. Device README is plain printable ASCII, at most 2 KiB.
 
-`wallpaper.packs.v1` provides bounded SD discovery and verification, a named **Wallpaper Collection** selector under **Settings > Display > Sleep Screen: Custom**, independent pack selection and persistent choice, random image selection and existing timed sleep refresh integration for the chosen collection. The default **All wallpapers** merges `/.sleep` and `/sleep` and retains `/sleep.bmp` precedence. Missing collections fall back safely. Theme Dark/Light galleries and Cover sleep modes remain distinct. The firmware loads **one BMP at a time**, not the whole collection into X3 RAM. It does **not** provide executable hooks, styling, or arbitrary file access.
+`wallpaper.packs.v1` is the advertised capability required to discover and install wallpaper collections. Plugin Hub validates package metadata and assets; firmware-specific wallpaper selectors, rotation rules, and sleep behavior are documented by the implementing firmware, not by this catalog publisher.
 
 Run the wallpaper validator and `pack-all`; use topic `crosspoint-wallpaper`. Publish a stable, non-draft, non-prerelease Release with one distinct **`<package-id>-<version>.crosspoint-wallpaper.zip`** per variant, matching every embedded manifest. The firmware selects **one variant matching the actual screen portrait resolution**, never by model name. Each wallpaper collection can be installed separately. See the [wallpaper contract](https://github.com/jadehawk/starwars.crosspoint-wallpaper/blob/main/docs/WALLPAPER_PACK_CONTRACT.md).
 
@@ -60,10 +49,7 @@ Declare a device-friendly plain-text `README.md` and a rich Markdown
 `DETAILS.md` in the installable `files` list for theme and wallpaper
 packages. Plugin Hub verifies both from the released ZIP, sanitizes the rich
 description into a versioned HTML page, and publishes `details.url` and
-`details.format`. **Normal tap opens details; Install is a separate action.**
-Installed Themes and Wallpaper Packs show descriptions as subtitles; author
-and version appear in details. A release is not ready until a catalog fixture
-proves that complete end-to-end flow.
+`details.format`. Compatible consumers may display the short description in installed lists and rich details before an installation action. A release is not ready until the catalog fixture verifies both metadata fields and the immutable details asset.
 
 ## Required pre-release acceptance checks (all three kinds)
 
@@ -86,9 +72,9 @@ Before publishing a tag, verify:
 5. The installed list shows a description, not an author subtitle; the
    author's credit is retained in item details. Existing installations
    continue to work during a format transition.
-6. Wallpaper variants have matching collection metadata and distinct,
-   verified resolutions. Plugin Hub chooses **one** correct variant, not
-   every ZIP or a hard-coded firmware model name.
+6. Wallpaper **and theme** variants have matching collection metadata and
+   distinct verified resolutions. Plugin Hub chooses **one** matching ZIP,
+   never a hard-coded model name; theme install identity remains stable.
 7. Run author-side tests, the Plugin Hub catalog fixture suite, firmware
    inspection, and actual X3/X4Pro touch/button tests before publishing.
    Keep old release tags immutable; changing the format requires a **new
@@ -99,7 +85,7 @@ Before publishing a tag, verify:
 1. Make the GitHub repo public and set its appropriate topic: `crosspoint-plugin`, `crosspoint-theme`, or `crosspoint-wallpaper`.
 2. Follow the matching payload layout, exact manifest/schema and ZIP naming rules above; keep development files **outside** the installable archive.
 3. Validate with the repo's own tests/packer. Check that releases match `MAJOR.MINOR.PATCH` and include immutable, install-only ZIP assets. Keep authorship/redistribution rights clear.
-4. Publish a **non-draft, non-prerelease** Release at a tag matching the manifest version (for themes and wallpaper assets use `vMAJOR.MINOR.PATCH`).
+4. Publish a **non-draft, non-prerelease** Release at a tag matching the manifest version (for themes and wallpaper assets use `vMAJOR.MINOR.PATCH`). For theme and wallpaper variants, attach each independently validated resolution-specific ZIP to that **same Release**, not separate tags.
 5. The Plugin Hub catalog GitHub Action runs every **three hours** or when manually dispatched. It discovers eligible repos by topics (plugin name fallback also supported), checks release assets, identity, duplicate IDs, sizes, files, manifests, and wallpaper image dimensions, and publishes valid items. Invalid/conflicting entries may be omitted or quarantined in `duplicate-extension-ids.json`; a catalog entry isn't a security endorsement. Existing firmware that lacks capabilities must not show theme/wallpaper install controls.
 6. Find results in `community-themes.json`, `community-wallpapers.json`, and `catalog-lists-capabilities.json`. Existing plugins remain in their legacy `catalog-lists.json` / Community catalog. Ordinary compliant repos do not require a Plugin Hub PR or allowlist exemption.
 
@@ -108,3 +94,6 @@ Before publishing a tag, verify:
 > Read this entire guide and the linked contract for my requested package kind (plugin, theme, or wallpaper). Audit my existing repository first. Create a self-contained direct-child installable folder and preserve stable IDs, authored assets, existing credits and unrelated files. Generate valid author-side manifests and device-friendly README text; never add runtime text cleaners, plugins or scripts to theme/wallpaper packs. Declare only real firmware capabilities and show me stock-vs-compatible firmware support honestly. Set the correct topic and immutable-release packaging, with validation and GitHub Actions. Run unit tests and validators, inspect ZIP members and manifest versions, and report what is ready for publication. Do not commit, push, tag, or release until I explicitly authorize those actions.
 
 Package names and version tags are **publishing contracts**, not firmware support guarantees.
+
+
+

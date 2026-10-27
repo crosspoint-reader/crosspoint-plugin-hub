@@ -112,6 +112,24 @@ class CatalogBuilderTests(unittest.TestCase):
         with self.assertRaises(build_catalog.CatalogError):
             build_catalog.normalize_compatibility({"plugin_api_min": -1})
 
+    def test_memory_and_device_recommendations_are_advisory(self):
+        result = build_catalog.normalize_compatibility({
+            "devices": ["x4", "x4pro"],
+            "exclude_devices": ["x3"],
+            "recommended": {"min_psram_mb": 2},
+            "requires": ["theme.sd.v1"],
+        })
+        self.assertEqual(result["advisory"], "models=x4|x4pro;exclude=x3;psram_mb=2")
+        self.assertEqual(result["recommended"], {"min_psram_mb": 2})
+        self.assertEqual(result["requires"], "theme.sd.v1")
+        for invalid in (-1, 65, 1.5, True):
+            with self.assertRaises(build_catalog.CatalogError):
+                build_catalog.normalize_compatibility({"recommended": {"min_psram_mb": invalid}})
+        with self.assertRaises(build_catalog.CatalogError):
+            build_catalog.normalize_compatibility({"devices": ["../bad"]})
+        with self.assertRaises(build_catalog.CatalogError):
+            build_catalog.normalize_compatibility({"devices": ["longdevicename123456789012345678901"] * 10})
+
     def test_plugin_id_prefers_valid_manifest_name(self):
         manifest = {"name": "sampleplugin"}
         self.assertEqual(
