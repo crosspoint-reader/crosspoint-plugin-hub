@@ -5,7 +5,7 @@ Plugin Hub is a CrossPoint SD-card plugin for discovering, installing, updating,
 Plugin Hub currently exposes one legacy user-facing catalog: **Community Plugins**. Valid discovered plugins are published there automatically. The three-hour workflow now also publishes opt-in, capability-aware Themes and Wallpaper Packs catalogs for upcoming firmware support. Older firmware and the existing Plugin Hub installer continue using the plugin-only catalog.
 
 > [!NOTE]
-> Plugin Hub `0.1.10` is the current stable Plugin Hub release, adding opt-in capability-aware catalogs without changing legacy plugin installation. Use a recent **CrossPoint Nightly** with the Plugin System enabled for the on-reader catalog, including dynamically fetched catalog lists through `browse.lists_url`. The browser interface (`plugin.js`) and on-reader interface (`device.json`) are complementary and work independently wherever the firmware exposes their standard plugin capabilities.
+> The latest published Plugin Hub release supports opt-in capability-aware catalogs without changing legacy plugin installation. Plugin support is currently available in **CrossPoint 2.0.0 release candidate (RC) and nightly builds**, rather than the latest stable CrossPoint firmware. Use a current RC or nightly build with the Plugin System enabled for the on-reader catalog, including dynamically fetched catalog lists through `browse.lists_url`. The browser interface (`plugin.js`) and on-reader interface (`device.json`) are complementary and work independently wherever the firmware exposes their standard plugin capabilities.
 
 ## Documentation
 
