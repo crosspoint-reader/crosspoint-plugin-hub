@@ -133,6 +133,39 @@ CrossPoint.registerPlugin(async (container, api) => {
     }
   }
 
+  // Discovery advisory: if firmware does not advertise hardware details,
+  // preserve legacy behavior. Never consult this during installation.
+  async function hardwareStatus() {
+    try {
+      const response = await fetch('/api/status');
+      if (!response.ok) return null;
+      const info = await response.json();
+      if (typeof info.deviceModel !== 'string' || !Number.isFinite(info.psramBytes)) return null;
+      return { model: info.deviceModel, psramBytes: info.psramBytes };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function recommendedForHardware(plugin, hardware) {
+    const advisory = plugin && plugin.compatibility && plugin.compatibility.advisory;
+    if (!hardware || typeof advisory !== 'string' || !advisory) return true;
+    for (const clause of advisory.split(';')) {
+      const pos = clause.indexOf('=');
+      if (pos < 0) continue;
+      const field = clause.slice(0, pos);
+      const value = clause.slice(pos + 1);
+      if (field === 'models' && !value.split('|').includes(hardware.model)) return false;
+      if (field === 'exclude' && value.split('|').includes(hardware.model)) return false;
+      if (field === 'psram_mb') {
+        const threshold = Number(value);
+        if (!Number.isInteger(threshold) || threshold < 0 ||
+            hardware.psramBytes < threshold * 1024 * 1024) return false;
+      }
+    }
+    return true;
+  }
+
   async function loadConfig() {
     const current = await readJsonFile(CONFIG_PATH);
     if (current) return current;
@@ -668,8 +701,10 @@ CrossPoint.registerPlugin(async (container, api) => {
       installed.set(name, { dir, version: await installedVersion(dir) });
     }
 
+    const hardware = await hardwareStatus();
     const catalogName = catalog.name || selectedCatalogLabel();
-    const plugins = Array.isArray(catalog.plugins) ? catalog.plugins : [];
+    const plugins = (Array.isArray(catalog.plugins) ? catalog.plugins : [])
+      .filter(plugin => installed.has(plugin.name) || recommendedForHardware(plugin, hardware));
     let updates = 0;
 
     if (plugins.length) {

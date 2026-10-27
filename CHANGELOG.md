@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.12 (2026-10-27)
+
+- Add optional advisory device/PSRAM discovery metadata without restricting manual installation or older firmware.
+- Publish independently verified display-resolution variants of theme collections under one stable catalog identity.
+- Validate scoped theme sleep galleries, including checksum-checked CPBs and capability-gated grayscale BMPs.
+- Preserve the plugin-only legacy catalog and stock CrossPoint support; keep firmware-specific rendering primitives documented by their implementing firmware.
+
 ## 0.1.11 (2026-10-23)
 
 - Align theme and wallpaper publication with the existing plugin-details contract.
@@ -123,3 +130,4 @@
 - Support explicit runtime file lists in `manifest.json`, with conventional CrossPoint files as the fallback.
 - Add automated catalog refreshes and catalog-builder tests.
 - Add a temporary bootstrap catalog for installing Plugin Hub through the existing CrossPoint Plugin Store before official catalog inclusion.
+

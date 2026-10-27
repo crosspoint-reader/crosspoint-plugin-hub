@@ -126,6 +126,7 @@ test('browser hub loads custom catalogs and only offers directional updates', as
     plugins: [
       {
         name: 'sample-newer',
+        compatibility: { advisory: 'psram_mb=2' },
         title: 'Sample Newer',
         version: '1.0.0',
         base: 'https://example.test/newer/',
@@ -137,6 +138,14 @@ test('browser hub loads custom catalogs and only offers directional updates', as
         version: '0.1.2.2',
         base: 'https://example.test/send/',
         files: ['manifest.json', 'device.json', 'plugin.js'],
+      },
+      {
+        name: 'x4-only',
+        title: 'X4 Only',
+        version: '1.0.0',
+        base: 'https://example.test/x4/',
+        files: ['manifest.json'],
+        compatibility: { advisory: 'models=x4|x4pro' },
       },
       {
         name: 'community-only',
@@ -161,6 +170,7 @@ test('browser hub loads custom catalogs and only offers directional updates', as
   };
 
   async function fetch(url) {
+    if (url === '/api/status') return response({ json: { deviceModel: 'x3', psramBytes: 0 } });
     if (url.startsWith('/download?path=')) {
       const path = new URL(url, 'http://device').searchParams.get('path');
       if (path === '/.crosspoint/plugin-hub.json') {
@@ -271,6 +281,8 @@ test('browser hub loads custom catalogs and only offers directional updates', as
     (child) => child.className === 'setting-row'
   );
   assert.equal(cards.length, 3);
+  assert.ok(cards.some((card) => card.id === 'ph-plugin-sample-newer'));
+  assert.ok(!cards.some((card) => card.id === 'ph-plugin-x4-only'));
   assert.equal(cards[0].children[1].children[0].textContent, 'Reinstall');
   assert.match(cards[0].children[1].children[0].className, /ph-btn-reinstall/);
   assert.match(cards[0].children[1].children.find(child => child.textContent === 'Remove').className, /ph-btn-remove/);
@@ -317,6 +329,7 @@ test('browser hub adopts api.dir while migrating legacy config', async () => {
   const relayCalls = [];
 
   async function fetch(url) {
+    if (url === '/api/status') return response({ json: { deviceModel: 'x3', psramBytes: 0 } });
     if (url.startsWith('/download?path=')) {
       const path = new URL(url, 'http://device').searchParams.get('path');
       downloadPaths.push(path);
@@ -408,6 +421,7 @@ test('browser hub falls back to built-in catalog URLs when list index is unavail
   const relayCalls = [];
 
   async function fetch(url) {
+    if (url === '/api/status') return response({ json: { deviceModel: 'x3', psramBytes: 0 } });
     if (url.startsWith('/download?path=')) {
       const path = new URL(url, 'http://device').searchParams.get('path');
       if (path === '/.crosspoint/plugins/pluginhub/manifest.json') {
