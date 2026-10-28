@@ -181,10 +181,10 @@ class ExtensionCatalogTests(unittest.TestCase):
         with self.assertRaisesRegex(ext.CatalogError, "target_resolution"):
             ext.safe_manifest(manifest, "snoopy", "theme-pack", "v0.1.1")
 
-    def test_suffixless_theme_asset_skips_only_bad_variant(self):
+    def test_stable_theme_identity_is_published_and_bad_asset_is_skipped(self):
         _, raw = archive("sampletheme", "theme-pack")
         names = ("sampletheme-0.1.1.crosspoint-theme.zip",
-                 "sampletheme-x3-0.1.1.crosspoint-theme.zip")
+                 "unrelatedtheme-0.1.1.crosspoint-theme.zip")
         assets = [{"name": name, "size": len(raw),
                    "browser_download_url": f"https://github.com/example/sampletheme/releases/download/v0.1.1/{name}"}
                   for name in names]
@@ -200,8 +200,8 @@ class ExtensionCatalogTests(unittest.TestCase):
         with redirect_stderr(warnings):
             packages = ext.stable_assets(Client(), {"full_name": "example/sampletheme"}, "theme-pack")
         self.assertEqual([(p["name"], p["variant_name"]) for p in packages],
-                         [("sampletheme", "sampletheme-x3")])
-        self.assertIn(names[0], warnings.getvalue())
+                         [("sampletheme", "sampletheme")])
+        self.assertIn(names[1], warnings.getvalue())
         items, collisions = ext.catalog_items(packages, "theme-pack")
         self.assertEqual(collisions, [])
         self.assertEqual([p["name"] for p in items], ["sampletheme"])

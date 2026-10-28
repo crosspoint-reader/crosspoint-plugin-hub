@@ -233,7 +233,7 @@ def stable_assets(client, repo, kind):
         require(filename.endswith(ending), "release asset naming/version mismatch")
         ident = filename[:-len(ending)]
         require(ID.fullmatch(ident) is not None, "unsafe package ID in release asset name")
-        # Theme release filenames require a variant suffix for firmware selection;
+        # Publisher accepts a stable-ID asset or a stable-ID-plus-variant asset;
         # the ZIP root and embedded name carry the *stable* theme identity.
         # Never assume that only two device sizes can ever exist.
         package_id = ident
@@ -256,9 +256,10 @@ def stable_assets(client, repo, kind):
             require(root_name.endswith(".crosspoint-theme"), "missing theme ZIP root")
             package_id = root_name[:-len(".crosspoint-theme")]
             require(ID.fullmatch(package_id) is not None, "unsafe stable theme collection ID")
-            if not (ident.startswith(package_id + "-") and len(ident) > len(package_id) + 1):
+            if not (ident == package_id or
+                    (ident.startswith(package_id + "-") and len(ident) > len(package_id) + 1)):
                 print(f"skip {full_name} ({kind}) asset {filename!r}: "
-                      "theme release asset identity must extend the stable collection ID",
+                      "theme release asset identity must match or extend the stable collection ID",
                       file=sys.stderr)
                 continue
         manifest = check_asset(raw, package_id, kind, tag)
