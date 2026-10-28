@@ -113,6 +113,12 @@ class CatalogBuilderTests(unittest.TestCase):
         with self.assertRaises(build_catalog.CatalogError):
             build_catalog.normalize_compatibility({"plugin_api_min": -1})
 
+    def test_unparseable_digit_strings_raise_catalog_error(self):
+        for bad in ("²", "9" * 5000):
+            with self.subTest(length=len(bad)):
+                with self.assertRaisesRegex(build_catalog.CatalogError, "plugin_api_min"):
+                    build_catalog.normalize_compatibility({"plugin_api_min": bad})
+
     def test_memory_and_device_recommendations_are_advisory(self):
         result = build_catalog.normalize_compatibility({
             "devices": ["x4", "x4pro"],
@@ -522,7 +528,7 @@ class CatalogBuilderTests(unittest.TestCase):
 
         class CuratedClient:
             def fetch_json_url(self, url):
-                return {"plugins": [entry("remote-invalid", invalid), entry("remote-valid")]}
+                return {"plugins": [entry("remote-invalid", {"plugin_api_min": "²"}), entry("remote-valid")]}
 
         whitelist = {
             "direct_plugins": [entry("direct-invalid", invalid), entry("direct-valid")],
@@ -827,7 +833,7 @@ class CatalogBuilderTests(unittest.TestCase):
         bad_manifest = {
             "name": "bad-plugin", "version": "1.0.0",
             "files": ["manifest.json", "device.json"],
-            "compatibility": {"recommended": {"unknown_field": 2}},
+            "compatibility": {"plugin_api_min": "²"},
         }
         good_manifest = {
             "name": "good-plugin", "version": "1.0.0",

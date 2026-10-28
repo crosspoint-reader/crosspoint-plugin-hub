@@ -334,7 +334,10 @@ def normalize_compatibility(value: Any) -> dict[str, Any] | None:
         if isinstance(api_min, int):
             parsed_api = api_min
         elif isinstance(api_min, str) and api_min.strip().isdigit():
-            parsed_api = int(api_min.strip())
+            try:
+                parsed_api = int(api_min.strip())
+            except ValueError as exc:
+                raise CatalogError("compatibility.plugin_api_min must be a non-negative integer") from exc
         else:
             raise CatalogError("compatibility.plugin_api_min must be a non-negative integer")
         if parsed_api < 0:

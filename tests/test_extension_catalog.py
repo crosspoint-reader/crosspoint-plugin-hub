@@ -180,7 +180,7 @@ class ExtensionCatalogTests(unittest.TestCase):
         with self.assertRaisesRegex(ext.CatalogError, "target_resolution"):
             ext.safe_manifest(manifest, "snoopy", "theme-pack", "v0.1.1")
 
-    def test_single_variant_theme_release_may_use_stable_identity(self):
+    def test_theme_release_requires_variant_suffix_for_firmware(self):
         _, raw = archive("halo", "theme-pack")
         filename = "halo-0.1.1.crosspoint-theme.zip"
         url = "https://github.com/example/halo/releases/download/v0.1.1/" + filename
@@ -196,11 +196,8 @@ class ExtensionCatalogTests(unittest.TestCase):
             def fetch_bytes_url(self, address, max_bytes):
                 return raw
 
-        packages = ext.stable_assets(Client(), {"full_name": "example/halo"}, "theme-pack")
-        self.assertEqual([(p["name"], p["variant_name"]) for p in packages], [("halo", "halo")])
-        items, conflicts = ext.catalog_items(packages, "theme-pack")
-        self.assertEqual(conflicts, [])
-        self.assertEqual([item["name"] for item in items], ["halo"])
+        with self.assertRaisesRegex(ext.CatalogError, "must extend the stable collection ID"):
+            ext.stable_assets(Client(), {"full_name": "example/halo"}, "theme-pack")
 
     def test_discover_resolution_scoped_theme_release_assets(self):
         a_id="snoopy"
