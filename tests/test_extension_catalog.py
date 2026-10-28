@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 import zipfile
+from contextlib import redirect_stderr
 from pathlib import Path
 from unittest.mock import patch
 
@@ -180,24 +181,30 @@ class ExtensionCatalogTests(unittest.TestCase):
         with self.assertRaisesRegex(ext.CatalogError, "target_resolution"):
             ext.safe_manifest(manifest, "snoopy", "theme-pack", "v0.1.1")
 
-    def test_theme_release_requires_variant_suffix_for_firmware(self):
-        _, raw = archive("halo", "theme-pack")
-        filename = "halo-0.1.1.crosspoint-theme.zip"
-        url = "https://github.com/example/halo/releases/download/v0.1.1/" + filename
+    def test_suffixless_theme_asset_skips_only_bad_variant(self):
+        _, raw = archive("sampletheme", "theme-pack")
+        names = ("sampletheme-0.1.1.crosspoint-theme.zip",
+                 "sampletheme-x3-0.1.1.crosspoint-theme.zip")
+        assets = [{"name": name, "size": len(raw),
+                   "browser_download_url": f"https://github.com/example/sampletheme/releases/download/v0.1.1/{name}"}
+                  for name in names]
 
         class Client:
             def latest_stable_release(self, name):
-                return {
-                    "tag_name": "v0.1.1",
-                    "assets": [{"name": filename, "size": len(raw),
-                                "browser_download_url": url}],
-                }
+                return {"tag_name": "v0.1.1", "assets": assets}
 
             def fetch_bytes_url(self, address, max_bytes):
                 return raw
 
-        with self.assertRaisesRegex(ext.CatalogError, "must extend the stable collection ID"):
-            ext.stable_assets(Client(), {"full_name": "example/halo"}, "theme-pack")
+        warnings = io.StringIO()
+        with redirect_stderr(warnings):
+            packages = ext.stable_assets(Client(), {"full_name": "example/sampletheme"}, "theme-pack")
+        self.assertEqual([(p["name"], p["variant_name"]) for p in packages],
+                         [("sampletheme", "sampletheme-x3")])
+        self.assertIn(names[0], warnings.getvalue())
+        items, collisions = ext.catalog_items(packages, "theme-pack")
+        self.assertEqual(collisions, [])
+        self.assertEqual([p["name"] for p in items], ["sampletheme"])
 
     def test_discover_resolution_scoped_theme_release_assets(self):
         a_id="snoopy"
@@ -215,6 +222,10 @@ class ExtensionCatalogTests(unittest.TestCase):
             raw[url]=blob
             releases.append({"name":name,"size":len(blob),"browser_download_url":url})
         class FakeClient:
+            def search_repositories(self, query):
+                assert query == "topic:crosspoint-theme"
+                return [{"full_name": "example/snoopy"}]
+
             def latest_stable_release(self, repo):
                 return {"tag_name":"v0.1.1","assets":releases,"html_url":"https://example/release"}
             def fetch_bytes_url(self, url, max_bytes):
@@ -222,6 +233,7 @@ class ExtensionCatalogTests(unittest.TestCase):
                 return raw[url]
         repo={"full_name":"example/snoopy"}
         packages=ext.stable_assets(FakeClient(),repo,"theme-pack")
+        self.assertEqual(len(ext.discover(FakeClient(), "theme-pack")), 2)
         self.assertEqual({p["name"] for p in packages},{"snoopy"})
         self.assertEqual({p["variant_name"] for p in packages},{"snoopy-x3","snoopy-x4plus"})
         catalog,conflicts=ext.catalog_items(packages,"theme-pack")
@@ -258,6 +270,7 @@ class ExtensionCatalogTests(unittest.TestCase):
         bmp2_path = "themes/snoopy/sleep/scene-02.bmp"
         ext.check_asset(make_theme({bmp_path: bmp(2, 3)}, declared_gallery=[bmp_path]),
                         "snoopy", "theme-pack", "v0.1.1")
+        # Scoped gallery files may be omitted from manifest.files by design.
         ext.check_asset(make_theme({bmp_path: bmp(2, 3), bmp2_path: bmp(2, 3)},
                                    declared_gallery=[bmp_path]),
                         "snoopy", "theme-pack", "v0.1.1")
@@ -265,16 +278,18 @@ class ExtensionCatalogTests(unittest.TestCase):
             ext.check_asset(make_theme({bmp_path: bmp(3, 2), bmp2_path: bmp(2, 3)},
                                        declared_gallery=[bmp_path]),
                             "snoopy", "theme-pack", "v0.1.1")
-        ext.check_asset(make_theme({bmp_path: bmp(2, 3)}), "snoopy", "theme-pack", "v0.1.1")
-        ext.check_asset(make_theme({cpb_path: cpb()}, False), "snoopy", "theme-pack", "v0.1.1")
+        ext.check_asset(make_theme({bmp_path: bmp(2, 3)}),
+                        "snoopy", "theme-pack", "v0.1.1")
+        ext.check_asset(make_theme({cpb_path: cpb()}, False),
+                        "snoopy", "theme-pack", "v0.1.1")
         with self.assertRaisesRegex(ext.CatalogError, "capability mismatch"):
-            ext.check_asset(make_theme({bmp_path: bmp(2, 3)}, False),
+            ext.check_asset(make_theme({bmp_path: bmp(2, 3)}, False, declared_gallery=[bmp_path]),
                             "snoopy", "theme-pack", "v0.1.1")
         with self.assertRaisesRegex(ext.CatalogError, "cannot mix"):
-            ext.check_asset(make_theme({bmp_path: bmp(2, 3), cpb_path: cpb()}),
+            ext.check_asset(make_theme({bmp_path: bmp(2, 3), cpb_path: cpb()}, declared_gallery=[bmp_path, cpb_path]),
                             "snoopy", "theme-pack", "v0.1.1")
         with self.assertRaisesRegex(ext.CatalogError, "dimensions mismatch"):
-            ext.check_asset(make_theme({bmp_path: bmp(3, 2)}),
+            ext.check_asset(make_theme({bmp_path: bmp(3, 2)}, declared_gallery=[bmp_path]),
                             "snoopy", "theme-pack", "v0.1.1")
 
     def test_theme_metadata_rejects_nonobject_json_and_assets(self):
@@ -296,8 +311,8 @@ class ExtensionCatalogTests(unittest.TestCase):
                     ext.check_asset(stream.getvalue(), "snoopy", "theme-pack", "v0.1.1")
 
     def test_theme_manifest(self):
-        _, raw = archive("halo","theme-pack")
-        m = ext.check_asset(raw,"halo","theme-pack","v0.1.1")
+        _, raw = archive("sampletheme","theme-pack")
+        m = ext.check_asset(raw,"sampletheme","theme-pack","v0.1.1")
         self.assertEqual(len(m["themes"]),1)
 
     def test_extension_details_publish_and_remain_immutable(self):
@@ -328,22 +343,22 @@ class ExtensionCatalogTests(unittest.TestCase):
                     entries, "wallpaper-pack", root, "crosspoint-reader/crosspoint-plugin-hub", "main")
 
     def test_theme_catalog_preserves_author_and_description(self):
-        manifest, _ = archive("halo", "theme-pack")
-        manifest["author"] = "Jadehawk + IOSDEC"
-        manifest["description"] = "HALO-inspired CrossPoint UI theme"
-        entry = {"name": "halo", "variant_name": "halo-x3", "manifest": manifest, "repository": "artist/halo",
-                 "title": "HALO", "author": manifest["author"], "tag": "v0.1.1",
+        manifest, _ = archive("sampletheme", "theme-pack")
+        manifest["author"] = "Example Author"
+        manifest["description"] = "Example CrossPoint UI theme"
+        entry = {"name": "sampletheme", "variant_name": "sampletheme-x3", "manifest": manifest, "repository": "artist/sampletheme",
+                 "title": "Example Theme", "author": manifest["author"], "tag": "v0.1.1",
                  "release_url": "", "asset_url": "https://example.test/theme.zip",
                  "bytes": 500, "sha256": "a" * 64,
-                 "_details_markdown": "# HALO\n\nTheme description"}
+                 "_details_markdown": "# Example Theme\n\nTheme description"}
         entries, errors = ext.catalog_items([entry], "theme-pack")
         self.assertFalse(errors)
-        self.assertEqual(entries[0]["author"], "Jadehawk + IOSDEC")
+        self.assertEqual(entries[0]["author"], "Example Author")
         self.assertEqual(entries[0]["description"], manifest["description"])
         with tempfile.TemporaryDirectory() as temp:
             self.assertTrue(ext.publish_extension_details(
                 entries, "theme-pack", Path(temp), "crosspoint-reader/crosspoint-plugin-hub", "main"))
-            self.assertIn("/details/extensions/themes/halo/0.1.1.html",
+            self.assertIn("/details/extensions/themes/sampletheme/0.1.1.html",
                           entries[0]["details"]["url"])
 
     def test_extension_rich_details_come_from_release_zip_not_repository(self):

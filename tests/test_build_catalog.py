@@ -1,6 +1,7 @@
 import importlib.util
 import io
 import json
+import sys
 import tempfile
 import unittest
 import zipfile
@@ -114,7 +115,11 @@ class CatalogBuilderTests(unittest.TestCase):
             build_catalog.normalize_compatibility({"plugin_api_min": -1})
 
     def test_unparseable_digit_strings_raise_catalog_error(self):
-        for bad in ("²", "9" * 5000):
+        cases = ["²"]
+        limit = getattr(sys, "get_int_max_str_digits", lambda: 0)()
+        if 0 < limit < 5000:
+            cases.append("9" * 5000)
+        for bad in cases:
             with self.subTest(length=len(bad)):
                 with self.assertRaisesRegex(build_catalog.CatalogError, "plugin_api_min"):
                     build_catalog.normalize_compatibility({"plugin_api_min": bad})

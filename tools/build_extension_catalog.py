@@ -38,7 +38,7 @@ KINDS = {
     "wallpaper-pack": ("crosspoint-wallpaper", "wallpaper", "community-wallpapers.json", "Community Wallpaper Packs", "wallpaper.packs.v1"),
 }
 SEEDS = {
-    "theme-pack": ("jadehawk/halo.crosspoint-theme",),
+    "theme-pack": (),  # Discover by the crosspoint-theme repository topic.
     "wallpaper-pack": ("jadehawk/starwars.crosspoint-wallpaper",),
 }
 BASE_URL = "https://raw.githubusercontent.com/crosspoint-reader/crosspoint-plugin-hub/main/"
@@ -190,6 +190,7 @@ def check_asset(raw: bytes, ident: str, kind: str, tag: str):
                         verify_bmp(contents[member], manifest["target_resolution"])
                     else:
                         verify_sleep_cpb(contents[member], manifest["target_resolution"])
+                # Firmware permits scoped sleep images without manifest.files entries.
                 unexpected -= members
         require(not unexpected and set(declared).issubset(contents),
                 "release ZIP contains unrecognized files or omits required metadata")
@@ -254,9 +255,12 @@ def stable_assets(client, repo, kind):
             root_name = next(iter(roots))
             require(root_name.endswith(".crosspoint-theme"), "missing theme ZIP root")
             package_id = root_name[:-len(".crosspoint-theme")]
-            require(ID.fullmatch(package_id) is not None and
-                    ident.startswith(package_id + "-") and len(ident) > len(package_id) + 1,
-                    "theme release asset identity must extend the stable collection ID")
+            require(ID.fullmatch(package_id) is not None, "unsafe stable theme collection ID")
+            if not (ident.startswith(package_id + "-") and len(ident) > len(package_id) + 1):
+                print(f"skip {full_name} ({kind}) asset {filename!r}: "
+                      "theme release asset identity must extend the stable collection ID",
+                      file=sys.stderr)
+                continue
         manifest = check_asset(raw, package_id, kind, tag)
         with zipfile.ZipFile(io.BytesIO(raw)) as verified_zip:
             member = f"{package_id}.{suffix}/DETAILS.md"
