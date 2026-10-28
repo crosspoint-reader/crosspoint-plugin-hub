@@ -171,13 +171,15 @@ def check_asset(raw: bytes, ident: str, kind: str, tag: str):
         if kind == "theme-pack":
             for theme in manifest["themes"]:
                 meta = json.loads(contents[theme["path"]].decode("utf-8"))
+                require(isinstance(meta, dict), "invalid theme.json")
                 assets = meta.get("assets", {})
+                require(isinstance(assets, dict), "invalid theme assets")
                 gallery = assets.get("sleep_art")
                 prefix = f"themes/{theme['id']}/sleep"
                 if gallery is None:
                     continue
                 require(gallery == prefix, "theme sleep gallery must be a scoped directory")
-                members = {f for f in unexpected if sleep_image_path(f, theme["id"])}
+                members = {f for f in contents if sleep_image_path(f, theme["id"])}
                 require(bool(members), "theme sleep directory cannot be empty")
                 types = {name.rsplit('.', 1)[-1] for name in members}
                 require(len(types) == 1, "theme sleep gallery cannot mix BMP and CPB images")
@@ -230,7 +232,7 @@ def stable_assets(client, repo, kind):
         require(filename.endswith(ending), "release asset naming/version mismatch")
         ident = filename[:-len(ending)]
         require(ID.fullmatch(ident) is not None, "unsafe package ID in release asset name")
-        # Theme release filename carries a resolution variant suffix, while
+        # A theme release filename may carry a resolution variant suffix, while
         # the ZIP root and embedded name carry the *stable* theme identity.
         # Never assume that only two device sizes can ever exist.
         package_id = ident
@@ -253,8 +255,8 @@ def stable_assets(client, repo, kind):
             require(root_name.endswith(".crosspoint-theme"), "missing theme ZIP root")
             package_id = root_name[:-len(".crosspoint-theme")]
             require(ID.fullmatch(package_id) is not None and
-                    ident.startswith(package_id + "-") and len(ident) > len(package_id) + 1,
-                    "theme release asset identity must extend the stable collection ID")
+                    (ident == package_id or ident.startswith(package_id + "-")),
+                    "theme release asset identity must equal or extend the stable collection ID")
         manifest = check_asset(raw, package_id, kind, tag)
         with zipfile.ZipFile(io.BytesIO(raw)) as verified_zip:
             member = f"{package_id}.{suffix}/DETAILS.md"

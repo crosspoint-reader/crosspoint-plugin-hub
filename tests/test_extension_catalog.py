@@ -180,6 +180,28 @@ class ExtensionCatalogTests(unittest.TestCase):
         with self.assertRaisesRegex(ext.CatalogError, "target_resolution"):
             ext.safe_manifest(manifest, "snoopy", "theme-pack", "v0.1.1")
 
+    def test_single_variant_theme_release_may_use_stable_identity(self):
+        _, raw = archive("halo", "theme-pack")
+        filename = "halo-0.1.1.crosspoint-theme.zip"
+        url = "https://github.com/example/halo/releases/download/v0.1.1/" + filename
+
+        class Client:
+            def latest_stable_release(self, name):
+                return {
+                    "tag_name": "v0.1.1",
+                    "assets": [{"name": filename, "size": len(raw),
+                                "browser_download_url": url}],
+                }
+
+            def fetch_bytes_url(self, address, max_bytes):
+                return raw
+
+        packages = ext.stable_assets(Client(), {"full_name": "example/halo"}, "theme-pack")
+        self.assertEqual([(p["name"], p["variant_name"]) for p in packages], [("halo", "halo")])
+        items, conflicts = ext.catalog_items(packages, "theme-pack")
+        self.assertEqual(conflicts, [])
+        self.assertEqual([item["name"] for item in items], ["halo"])
+
     def test_discover_resolution_scoped_theme_release_assets(self):
         a_id="snoopy"
         releases=[]
@@ -212,12 +234,14 @@ class ExtensionCatalogTests(unittest.TestCase):
         self.assertEqual({v["target_resolution"]["width"] for v in catalog[0]["variants"]},{528,480})
 
     def test_theme_sleep_grayscale_bmp_and_legacy_cpb_validation(self):
-        def make_theme(gallery_files, grayscale_capability=True):
+        def make_theme(gallery_files, grayscale_capability=True, declared_gallery=False):
             manifest, files = payload("snoopy", "theme-pack", resolution=(2, 3))
             scene = {"assets": {"sleep_art": "themes/snoopy/sleep"}}
             files["themes/snoopy/theme.json"] = json.dumps(scene).encode()
             if grayscale_capability:
                 manifest["themes"][0]["requires"].append("theme.sleep-grayscale.v1")
+            if declared_gallery:
+                manifest["files"].extend(declared_gallery)
             files["manifest.json"] = json.dumps(manifest).encode()
             files.update(gallery_files)
             stream = io.BytesIO()
@@ -234,6 +258,16 @@ class ExtensionCatalogTests(unittest.TestCase):
 
         bmp_path = "themes/snoopy/sleep/scene-01.bmp"
         cpb_path = "themes/snoopy/sleep/scene-01.cpb"
+        bmp2_path = "themes/snoopy/sleep/scene-02.bmp"
+        ext.check_asset(make_theme({bmp_path: bmp(2, 3)}, declared_gallery=[bmp_path]),
+                        "snoopy", "theme-pack", "v0.1.1")
+        ext.check_asset(make_theme({bmp_path: bmp(2, 3), bmp2_path: bmp(2, 3)},
+                                   declared_gallery=[bmp_path]),
+                        "snoopy", "theme-pack", "v0.1.1")
+        with self.assertRaisesRegex(ext.CatalogError, "dimensions mismatch"):
+            ext.check_asset(make_theme({bmp_path: bmp(3, 2), bmp2_path: bmp(2, 3)},
+                                       declared_gallery=[bmp_path]),
+                            "snoopy", "theme-pack", "v0.1.1")
         ext.check_asset(make_theme({bmp_path: bmp(2, 3)}), "snoopy", "theme-pack", "v0.1.1")
         ext.check_asset(make_theme({cpb_path: cpb()}, False), "snoopy", "theme-pack", "v0.1.1")
         with self.assertRaisesRegex(ext.CatalogError, "capability mismatch"):
@@ -245,6 +279,24 @@ class ExtensionCatalogTests(unittest.TestCase):
         with self.assertRaisesRegex(ext.CatalogError, "dimensions mismatch"):
             ext.check_asset(make_theme({bmp_path: bmp(3, 2)}),
                             "snoopy", "theme-pack", "v0.1.1")
+
+    def test_theme_metadata_rejects_nonobject_json_and_assets(self):
+        cases = [
+            ([], "invalid theme.json"),
+            ("invalid", "invalid theme.json"),
+            ({"assets": "invalid"}, "invalid theme assets"),
+            ({"assets": []}, "invalid theme assets"),
+        ]
+        for scene, message in cases:
+            with self.subTest(scene=scene):
+                _, files = payload("snoopy", "theme-pack")
+                files["themes/snoopy/theme.json"] = json.dumps(scene).encode()
+                stream = io.BytesIO()
+                with zipfile.ZipFile(stream, "w", zipfile.ZIP_DEFLATED) as out:
+                    for name, data in files.items():
+                        out.writestr(f"snoopy.crosspoint-theme/{name}", data)
+                with self.assertRaisesRegex(ext.CatalogError, message):
+                    ext.check_asset(stream.getvalue(), "snoopy", "theme-pack", "v0.1.1")
 
     def test_theme_manifest(self):
         _, raw = archive("halo","theme-pack")
