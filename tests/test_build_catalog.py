@@ -1,9 +1,11 @@
 import importlib.util
 import io
 import json
+import sys
 import tempfile
 import unittest
 import zipfile
+from contextlib import redirect_stderr
 from pathlib import Path
 
 
@@ -111,6 +113,16 @@ class CatalogBuilderTests(unittest.TestCase):
             build_catalog.normalize_compatibility({"firmware_family": ["crosspoint", 3]})
         with self.assertRaises(build_catalog.CatalogError):
             build_catalog.normalize_compatibility({"plugin_api_min": -1})
+
+    def test_unparseable_digit_strings_raise_catalog_error(self):
+        cases = ["²"]
+        limit = getattr(sys, "get_int_max_str_digits", lambda: 0)()
+        if 0 < limit < 5000:
+            cases.append("9" * 5000)
+        for bad in cases:
+            with self.subTest(length=len(bad)):
+                with self.assertRaisesRegex(build_catalog.CatalogError, "plugin_api_min"):
+                    build_catalog.normalize_compatibility({"plugin_api_min": bad})
 
     def test_memory_and_device_recommendations_are_advisory(self):
         result = build_catalog.normalize_compatibility({
@@ -505,6 +517,40 @@ class CatalogBuilderTests(unittest.TestCase):
             },
         )
 
+    def test_invalid_curated_compatibility_skips_only_affected_entries(self):
+        def entry(plugin_id, compatibility=None):
+            item = {
+                "name": plugin_id,
+                "version": "1.0.0",
+                "base": "https://example.test/plugins/",
+                "files": ["manifest.json", "plugin.js"],
+            }
+            if compatibility is not None:
+                item["compatibility"] = compatibility
+            return item
+
+        invalid = {"recommended": {"unknown_field": 2}}
+
+        class CuratedClient:
+            def fetch_json_url(self, url):
+                return {"plugins": [entry("remote-invalid", {"plugin_api_min": "²"}), entry("remote-valid")]}
+
+        whitelist = {
+            "direct_plugins": [entry("direct-invalid", invalid), entry("direct-valid")],
+            "catalogs": [{
+                "url": "https://example.test/catalog.json",
+                "plugins": ["remote-invalid", "remote-valid"],
+            }],
+        }
+        errors = io.StringIO()
+        with redirect_stderr(errors):
+            plugins = build_catalog.curated_catalog_plugins(CuratedClient(), whitelist)
+
+        self.assertEqual([p["name"] for p in plugins], ["direct-valid", "remote-valid"])
+        self.assertIn("direct-invalid", errors.getvalue())
+        self.assertIn("remote-invalid", errors.getvalue())
+        self.assertIn("https://example.test/catalog.json", errors.getvalue())
+
     def test_direct_whitelist_plugin_is_ingested_without_source_catalog(self):
         whitelist = {
             "direct_plugins": [
@@ -787,6 +833,41 @@ class CatalogBuilderTests(unittest.TestCase):
         self.assertEqual([plugin["name"] for plugin in plugins], ["first-plugin", "second-plugin"])
         self.assertEqual([plugin["version"] for plugin in plugins], ["1.0.0", "2.0.0"])
         self.assertTrue(all(plugin["release"] == "v9.9.9" for plugin in plugins))
+
+    def test_invalid_release_asset_compatibility_skips_only_affected_asset(self):
+        bad_manifest = {
+            "name": "bad-plugin", "version": "1.0.0",
+            "files": ["manifest.json", "device.json"],
+            "compatibility": {"plugin_api_min": "²"},
+        }
+        good_manifest = {
+            "name": "good-plugin", "version": "1.0.0",
+            "files": ["manifest.json", "device.json"],
+            "compatibility": {"requires": ["catalog.compatibility"]},
+        }
+        assets = [
+            {"name": "Bad.crosspoint-plugin.zip", "browser_download_url": "memory://bad"},
+            {"name": "Good.crosspoint-plugin.zip", "browser_download_url": "memory://good"},
+        ]
+        client = ReleaseAssetClient(
+            [{"tag_name": "v1.0.0", "assets": assets}],
+            {"memory://bad": plugin_zip(bad_manifest), "memory://good": plugin_zip(good_manifest)},
+        )
+        errors = io.StringIO()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            mirror_root = Path(temp_dir) / "release-assets"
+            with redirect_stderr(errors):
+                plugins = build_catalog.release_asset_plugins(
+                    client, ["owner/monorepo"], "crosspoint-reader/crosspoint-plugin-hub",
+                    mirror_root,
+                )
+            self.assertFalse((mirror_root / "bad-plugin").exists())
+            self.assertTrue((mirror_root / "good-plugin" / "1.0.0" / "manifest.json").exists())
+
+        self.assertEqual([item["name"] for item in plugins], ["good-plugin"])
+        self.assertEqual(plugins[0]["compatibility"], {"requires": "catalog.compatibility"})
+        self.assertIn("Bad.crosspoint-plugin.zip", errors.getvalue())
+        self.assertIn("owner/monorepo", errors.getvalue())
 
     def test_release_asset_duplicate_ids_are_quarantined_before_mirroring(self):
         first_manifest = {

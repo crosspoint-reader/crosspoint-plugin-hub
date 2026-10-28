@@ -334,7 +334,10 @@ def normalize_compatibility(value: Any) -> dict[str, Any] | None:
         if isinstance(api_min, int):
             parsed_api = api_min
         elif isinstance(api_min, str) and api_min.strip().isdigit():
-            parsed_api = int(api_min.strip())
+            try:
+                parsed_api = int(api_min.strip())
+            except ValueError as exc:
+                raise CatalogError("compatibility.plugin_api_min must be a non-negative integer") from exc
         else:
             raise CatalogError("compatibility.plugin_api_min must be a non-negative integer")
         if parsed_api < 0:
@@ -637,7 +640,7 @@ def curated_catalog_plugins(
         source_entry: dict[str, Any],
         plugin_id: str,
         source_catalog: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | None:
         version_value = source_entry.get("version")
         base = source_entry.get("base")
         files_value = source_entry.get("files")
@@ -652,7 +655,12 @@ def curated_catalog_plugins(
         title = source_entry.get("title")
         description = source_entry.get("description")
         author = source_entry.get("author")
-        compatibility = normalize_compatibility(source_entry.get("compatibility"))
+        try:
+            compatibility = normalize_compatibility(source_entry.get("compatibility"))
+        except CatalogError as exc:
+            source = source_catalog or "direct whitelist"
+            print(f"skip curated plugin {plugin_id!r} from {source}: {exc}", file=sys.stderr)
+            return None
         entry: dict[str, Any] = {
             "name": plugin_id,
             "title": title if isinstance(title, str) and title else plugin_id,
@@ -674,7 +682,10 @@ def curated_catalog_plugins(
             raise CatalogError("whitelist direct plugin ids are invalid")
         if plugin_id in seen_ids:
             raise CatalogError(f"duplicate whitelisted plugin id: {plugin_id}")
-        imported.append(normalized_entry(source_entry, plugin_id))
+        entry = normalized_entry(source_entry, plugin_id)
+        if entry is None:
+            continue
+        imported.append(entry)
         seen_ids.add(plugin_id)
 
     for source in whitelist.get("catalogs", []):
@@ -706,7 +717,10 @@ def curated_catalog_plugins(
             source_entry = by_id.get(plugin_id)
             if not isinstance(source_entry, dict):
                 raise CatalogError(f"whitelisted plugin {plugin_id!r} not found in {url}")
-            imported.append(normalized_entry(source_entry, plugin_id, url))
+            entry = normalized_entry(source_entry, plugin_id, url)
+            if entry is None:
+                continue
+            imported.append(entry)
             seen_ids.add(plugin_id)
 
     imported.sort(key=lambda item: (item["title"].casefold(), item["name"]))
@@ -1004,7 +1018,11 @@ def release_asset_plugins(
             title = manifest.get("title")
             description = manifest.get("description")
             author = manifest.get("author")
-            compatibility = normalize_compatibility(manifest.get("compatibility"))
+            try:
+                compatibility = normalize_compatibility(manifest.get("compatibility"))
+            except CatalogError as exc:
+                print(f"skip release asset {asset_name!r} from {full_name}: {exc}", file=sys.stderr)
+                continue
             entry: dict[str, Any] = {
                 "name": plugin_id,
                 "title": title if isinstance(title, str) and title else plugin_id,
