@@ -91,8 +91,11 @@ test('network failure checking config.json refuses to write instead of assuming 
 
 test('catalog cannot distribute a device token or use traversal paths', async () => {
   const host = scenario({configStatus: 404});
-  await assert.rejects(host.install(plugin(['manifest.json', 'token.json'])), /token.json/);
+  for (const name of ['token.json', 'TOKEN.JSON', 'Token.Json', 'data/tOkEn.Json']) {
+    await assert.rejects(host.install(plugin(['manifest.json', name])), /token.json/);
+  }
   await assert.rejects(host.install(plugin(['manifest.json', '../config.json'])), /unsafe plugin file path/);
+  await assert.rejects(host.install(plugin(['manifest.json', 'MANIFEST.JSON'])), /duplicate plugin path/);
   assert.equal(host.inspected.length, 0);
   assert.equal(host.madeDirs.length, 0);
   assert.equal(host.downloaded.length, 0);
@@ -105,4 +108,19 @@ test('plugins without config.json install without extra file checks', async () =
   assert.deepEqual(host.downloaded.map(x => x.path), [
     '/plugins/ybx/manifest.json', '/plugins/ybx/plugin.js'
   ]);
+});
+
+test('case-folded Config.json preserves the existing root config on FAT volumes', async () => {
+  const host = scenario({configStatus: 200});
+  await host.install(plugin(['manifest.json', 'Config.JSON', 'plugin.js']));
+  assert.deepEqual(host.inspected, ['/plugins/ybx/config.json']);
+  assert.deepEqual(host.downloaded.map(x => x.path), [
+    '/plugins/ybx/manifest.json', '/plugins/ybx/plugin.js'
+  ]);
+});
+
+test('case-folded Config.json gets default values on first install', async () => {
+  const host = scenario({configStatus: 404});
+  await host.install(plugin(['manifest.json', 'Config.JSON', 'plugin.js']));
+  assert.ok(host.downloaded.some(x => x.path === '/plugins/ybx/Config.JSON'));
 });

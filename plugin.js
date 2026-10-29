@@ -398,15 +398,21 @@ CrossPoint.registerPlugin(async (container, api) => {
     // credentials are private reader state, never part of a distributable
     // plugin package.
     const files = plugin.files.map(safeRelativePath);
-    if (files.includes('token.json')) {
+    // FAT volumes are case-insensitive: TOKEN.JSON, Token.Json and a nested
+    // data/token.json can still resolve to a reader's private credentials.
+    const normalized = files.map((rel) => rel.toLowerCase());
+    if (normalized.some((rel) => rel.split('/').pop() === 'token.json')) {
       throw new Error('plugin packages must not overwrite token.json');
+    }
+    if (new Set(normalized).size !== files.length) {
+      throw new Error('duplicate plugin path (case-insensitive filesystem)');
     }
     // Plugin Hub reinstalls and updates in-place. Preserve locally modified
     // config.json even when it appears in manifest.files; first installs
     // (HTTP 404) still receive the packaged defaults. A failed lookup must
     // not be mistaken for a missing file, or user settings could be lost.
     const preserve = new Set();
-    if (files.includes('config.json')) {
+    if (normalized.includes('config.json')) {
       const path = dir + '/config.json';
       let response;
       try {
@@ -424,7 +430,7 @@ CrossPoint.registerPlugin(async (container, api) => {
     for (let i = 0; i < files.length; i++) {
       if (onProgress) onProgress(i, files.length);
       const rel = files[i];
-      if (preserve.has(rel)) continue;
+      if (preserve.has(rel.toLowerCase())) continue;
 
       const segments = rel.split('/');
       segments.pop();
