@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.13 (2026-10-29)
+
+- Preserve existing plugin `config.json` settings during browser-based updates and reinstalls while retaining packaged defaults for first-time installations.
+- Protect plugin credentials and configuration from FAT filename variants, short-name aliases, and normalized path collisions before writing files.
+- Include browser installer regression tests in automated catalog checks.
+
 ## 0.1.12 (2026-10-27)
 
 - Add optional advisory device/PSRAM discovery metadata without restricting manual installation or older firmware.

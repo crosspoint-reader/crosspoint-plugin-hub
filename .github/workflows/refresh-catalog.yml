@@ -49,7 +49,7 @@ jobs:
         run: python -m unittest discover -s tests -v
 
       - name: Run browser plugin tests
-        run: node --test tests/test_plugin_js.mjs
+        run: node --test tests/test_plugin_install.mjs tests/test_plugin_js.mjs
 
       - name: Build catalog
         env:
