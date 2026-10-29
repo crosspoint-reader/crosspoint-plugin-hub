@@ -82,7 +82,7 @@ CrossPoint can discover plugins from:
 /.plugins
 ```
 
-Plugin updates preserve the existing discovered plugin root.
+Plugin updates preserve the existing discovered plugin root. In the browser Plugin Hub, updating or reinstalling a plugin also preserves an existing root config.json (the packaged default is installed when the file does not yet exist). A package is not permitted to overwrite token.json. Removing a plugin is different: it deletes the plugin directory, including any local config or token files in that directory; data in the separate plugin-data namespace is unaffected.
 
 ## Browser WebUI
 

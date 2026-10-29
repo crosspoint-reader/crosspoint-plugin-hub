@@ -393,13 +393,68 @@ CrossPoint.registerPlugin(async (container, api) => {
   async function installPlugin(plugin, onProgress, installedDir = null) {
     validatePlugin(plugin);
     const dir = installedDir || PLUGINS_DIR + '/' + plugin.name;
-    await mkdir(dir);
-
     const base = String(plugin.base).replace(/\/*$/, '/');
-    const files = plugin.files;
+    // Validate every catalog path before touching the SD card. Runtime
+    // credentials are private reader state, never part of a distributable
+    // plugin package.
+    const files = plugin.files.map(safeRelativePath);
+    // SdFat resolves paths without regard to case and may ignore leading
+    // spaces and trailing dots/spaces in *each* path component. Validate
+    // against those resolved names, not the manifest's literal spelling.
+    function fatKey(rel) {
+      const parts = rel.split('/').map((part) =>
+        part.replace(/^ +/, '').replace(/[. ]+$/, '').toLowerCase()
+      );
+      if (parts.some((part) => !part || part === '.' || part === '..')) {
+        throw new Error('unsafe FAT plugin file path: ' + rel);
+      }
+      return parts.join('/');
+    }
+    const normalized = files.map(fatKey);
+    // FAT short 8.3 names may refer to long filenames already on the card
+    // (CONFIG~1.JSO, TOKEN~1.JSO, CONFI~10.JSO, etc.). Reject rather than
+    // assuming that /api/fetch will create a new independent file.
+    function protectedFatShortAlias(rel) {
+      const parts = rel.split('/');
+      const leaf = parts.pop();
+      const match = /^([a-z]{1,6})~([0-9]+)\.jso$/.exec(leaf);
+      if (!match || match[1].length + match[2].length + 1 > 8) return false;
+      return 'token'.startsWith(match[1]) ||
+        (parts.length === 0 && 'config'.startsWith(match[1]));
+    }
+    if (normalized.some(protectedFatShortAlias)) {
+      throw new Error('plugin packages must not overwrite protected FAT short names');
+    }
+    if (normalized.some((rel) => rel.split('/').pop() === 'token.json')) {
+      throw new Error('plugin packages must not overwrite token.json');
+    }
+    if (new Set(normalized).size !== files.length) {
+      throw new Error('duplicate plugin path (FAT-normalized filesystem)');
+    }
+    // Plugin Hub reinstalls and updates in-place. Preserve locally modified
+    // config.json even when it appears in manifest.files; first installs
+    // (HTTP 404) still receive the packaged defaults. A failed lookup must
+    // not be mistaken for a missing file, or user settings could be lost.
+    const preserve = new Set();
+    if (normalized.includes('config.json')) {
+      const path = dir + '/config.json';
+      let response;
+      try {
+        response = await fetch('/download?path=' + encodeURIComponent(path));
+      } catch (error) {
+        throw new Error('cannot check existing config.json: ' + error.message);
+      }
+      if (response.ok) preserve.add('config.json');
+      else if (response.status !== 404) {
+        throw new Error('cannot check existing config.json (HTTP ' + response.status + ')');
+      }
+    }
+
+    await mkdir(dir);
     for (let i = 0; i < files.length; i++) {
       if (onProgress) onProgress(i, files.length);
-      const rel = safeRelativePath(files[i]);
+      const rel = files[i];
+      if (preserve.has(normalized[i])) continue;
 
       const segments = rel.split('/');
       segments.pop();
