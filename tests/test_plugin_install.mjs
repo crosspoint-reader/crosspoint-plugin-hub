@@ -179,3 +179,42 @@ test('nested config is not mistaken for the protected root config', async () => 
     '/plugins/ybx/manifest.json', '/plugins/ybx/other/config.json.'
   ]);
 });
+
+test('FAT 8.3 short-name aliases of token.json are rejected before any SD writes', async () => {
+  const host = scenario({configStatus: 404});
+  for (const name of [
+    'TOKEN~1.JSO', 'token~2.jso', 'token~1.JSO. ', ' TOKEN~1.JSO ',
+    'nested/TOKEN~1.JSO', 'nested/ ToKeN~1.JsO. ',
+    'nested/TOKE~10.JSO', 'nested/TO~10000.JSO'
+  ]) {
+    await assert.rejects(host.install(plugin(['manifest.json', name])), /protected FAT short names/, name);
+  }
+  assert.deepEqual(host.inspected, []);
+  assert.deepEqual(host.madeDirs, []);
+  assert.deepEqual(host.downloaded, []);
+});
+
+test('FAT 8.3 short-name aliases of root config.json cannot overwrite settings', async () => {
+  for (const configStatus of [200, 404]) {
+    const host = scenario({configStatus});
+    for (const name of [
+      'CONFIG~1.JSO', 'config~2.jso', 'CONFIG~1.JSO. ',
+      ' config~1.jso ', 'CONFI~10.JSO', 'CONF~100.JSO'
+    ]) {
+      await assert.rejects(host.install(plugin(['manifest.json', name])), /protected FAT short names/, name);
+    }
+    assert.deepEqual(host.inspected, []);
+    assert.deepEqual(host.madeDirs, []);
+    assert.deepEqual(host.downloaded, []);
+  }
+});
+
+test('FAT short-name guard is scoped to protected files and root config', async () => {
+  const host = scenario({configStatus: 500});
+  await host.install(plugin(['manifest.json', 'nested/CONFIG~1.JSO', 'other/IMAGE~1.PNG']));
+  assert.deepEqual(host.inspected, []);
+  assert.deepEqual(host.downloaded.map(x => x.path), [
+    '/plugins/ybx/manifest.json', '/plugins/ybx/nested/CONFIG~1.JSO',
+    '/plugins/ybx/other/IMAGE~1.PNG'
+  ]);
+});

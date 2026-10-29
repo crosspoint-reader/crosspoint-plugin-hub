@@ -411,6 +411,20 @@ CrossPoint.registerPlugin(async (container, api) => {
       return parts.join('/');
     }
     const normalized = files.map(fatKey);
+    // FAT short 8.3 names may refer to long filenames already on the card
+    // (CONFIG~1.JSO, TOKEN~1.JSO, CONFI~10.JSO, etc.). Reject rather than
+    // assuming that /api/fetch will create a new independent file.
+    function protectedFatShortAlias(rel) {
+      const parts = rel.split('/');
+      const leaf = parts.pop();
+      const match = /^([a-z]{1,6})~([0-9]+)\.jso$/.exec(leaf);
+      if (!match || match[1].length + match[2].length + 1 > 8) return false;
+      return 'token'.startsWith(match[1]) ||
+        (parts.length === 0 && 'config'.startsWith(match[1]));
+    }
+    if (normalized.some(protectedFatShortAlias)) {
+      throw new Error('plugin packages must not overwrite protected FAT short names');
+    }
     if (normalized.some((rel) => rel.split('/').pop() === 'token.json')) {
       throw new Error('plugin packages must not overwrite token.json');
     }
