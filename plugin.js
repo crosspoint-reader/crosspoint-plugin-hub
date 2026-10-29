@@ -393,13 +393,38 @@ CrossPoint.registerPlugin(async (container, api) => {
   async function installPlugin(plugin, onProgress, installedDir = null) {
     validatePlugin(plugin);
     const dir = installedDir || PLUGINS_DIR + '/' + plugin.name;
-    await mkdir(dir);
-
     const base = String(plugin.base).replace(/\/*$/, '/');
-    const files = plugin.files;
+    // Validate every catalog path before touching the SD card. Runtime
+    // credentials are private reader state, never part of a distributable
+    // plugin package.
+    const files = plugin.files.map(safeRelativePath);
+    if (files.includes('token.json')) {
+      throw new Error('plugin packages must not overwrite token.json');
+    }
+    // Plugin Hub reinstalls and updates in-place. Preserve locally modified
+    // config.json even when it appears in manifest.files; first installs
+    // (HTTP 404) still receive the packaged defaults. A failed lookup must
+    // not be mistaken for a missing file, or user settings could be lost.
+    const preserve = new Set();
+    if (files.includes('config.json')) {
+      const path = dir + '/config.json';
+      let response;
+      try {
+        response = await fetch('/download?path=' + encodeURIComponent(path));
+      } catch (error) {
+        throw new Error('cannot check existing config.json: ' + error.message);
+      }
+      if (response.ok) preserve.add('config.json');
+      else if (response.status !== 404) {
+        throw new Error('cannot check existing config.json (HTTP ' + response.status + ')');
+      }
+    }
+
+    await mkdir(dir);
     for (let i = 0; i < files.length; i++) {
       if (onProgress) onProgress(i, files.length);
-      const rel = safeRelativePath(files[i]);
+      const rel = files[i];
+      if (preserve.has(rel)) continue;
 
       const segments = rel.split('/');
       segments.pop();
