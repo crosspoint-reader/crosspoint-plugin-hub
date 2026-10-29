@@ -91,11 +91,22 @@ test('network failure checking config.json refuses to write instead of assuming 
 
 test('catalog cannot distribute a device token or use traversal paths', async () => {
   const host = scenario({configStatus: 404});
-  for (const name of ['token.json', 'TOKEN.JSON', 'Token.Json', 'data/tOkEn.Json']) {
+  for (const name of [
+    'token.json', 'TOKEN.JSON', 'Token.Json',
+    'token.json.', 'token.json ', ' token.json', '  ToKeN.JsOn . ',
+    'data/tOkEn.Json', 'data/TOKEN.JSON.', 'subdir/ token.json ',
+    'subdir / ToKeN.JsOn. ', 'nested /other/token.json. ',
+  ]) {
     await assert.rejects(host.install(plugin(['manifest.json', name])), /token.json/);
   }
   await assert.rejects(host.install(plugin(['manifest.json', '../config.json'])), /unsafe plugin file path/);
   await assert.rejects(host.install(plugin(['manifest.json', 'MANIFEST.JSON'])), /duplicate plugin path/);
+  await assert.rejects(host.install(plugin(['manifest.json', 'manifest.json.'])), /duplicate plugin path/);
+  await assert.rejects(host.install(plugin(['manifest.json', ' manifest.json'])), /duplicate plugin path/);
+  await assert.rejects(host.install(plugin(['manifest.json', 'nested/config.json', 'nested /Config.JSON.'])), /duplicate plugin path/);
+  await assert.rejects(host.install(plugin(['manifest.json', 'foo/  /plugin.js'])), /unsafe FAT plugin file path/);
+  await assert.rejects(host.install(plugin(['manifest.json', '.../plugin.js'])), /unsafe FAT plugin file path/);
+  await assert.rejects(host.install(plugin(['manifest.json', '.. /plugin.js'])), /unsafe FAT plugin file path/);
   assert.equal(host.inspected.length, 0);
   assert.equal(host.madeDirs.length, 0);
   assert.equal(host.downloaded.length, 0);
@@ -123,4 +134,48 @@ test('case-folded Config.json gets default values on first install', async () =>
   const host = scenario({configStatus: 404});
   await host.install(plugin(['manifest.json', 'Config.JSON', 'plugin.js']));
   assert.ok(host.downloaded.some(x => x.path === '/plugins/ybx/Config.JSON'));
+});
+
+
+test('SdFat filename variants preserve existing root config.json on update', async () => {
+  for (const name of ['config.json.', 'config.json ', ' config.json', 'Config.JSON. ', '  ConFiG.JsoN  ']) {
+    const host = scenario({configStatus: 200});
+    await host.install(plugin(['manifest.json', name, 'plugin.js']));
+    assert.deepEqual(host.inspected, ['/plugins/ybx/config.json'], name);
+    assert.deepEqual(host.downloaded.map(x => x.path), [
+      '/plugins/ybx/manifest.json', '/plugins/ybx/plugin.js'
+    ], name);
+    assert.deepEqual(host.progress.at(-1), [3, 3], name);
+  }
+});
+
+test('SdFat filename variants still install root default config on first install', async () => {
+  for (const name of ['config.json.', ' config.json', 'Config.JSON ']) {
+    const host = scenario({configStatus: 404});
+    await host.install(plugin(['manifest.json', name]));
+    assert.deepEqual(host.inspected, ['/plugins/ybx/config.json']);
+    assert.deepEqual(host.downloaded.map(x => x.path), [
+      '/plugins/ybx/manifest.json', '/plugins/ybx/' + name
+    ]);
+  }
+});
+
+test('SdFat normalized directory spellings detect duplicates before writes', async () => {
+  const host = scenario();
+  await assert.rejects(
+    host.install(plugin(['manifest.json', 'data/foo.json', ' DATA. /Foo.JSON. '])),
+    /duplicate plugin path/
+  );
+  assert.deepEqual(host.downloaded, []);
+  assert.deepEqual(host.madeDirs, []);
+  assert.deepEqual(host.inspected, []);
+});
+
+test('nested config is not mistaken for the protected root config', async () => {
+  const host = scenario({configStatus: 500});
+  await host.install(plugin(['manifest.json', 'other/config.json.']));
+  assert.deepEqual(host.inspected, []);
+  assert.deepEqual(host.downloaded.map(x => x.path), [
+    '/plugins/ybx/manifest.json', '/plugins/ybx/other/config.json.'
+  ]);
 });

@@ -398,14 +398,24 @@ CrossPoint.registerPlugin(async (container, api) => {
     // credentials are private reader state, never part of a distributable
     // plugin package.
     const files = plugin.files.map(safeRelativePath);
-    // FAT volumes are case-insensitive: TOKEN.JSON, Token.Json and a nested
-    // data/token.json can still resolve to a reader's private credentials.
-    const normalized = files.map((rel) => rel.toLowerCase());
+    // SdFat resolves paths without regard to case and may ignore leading
+    // spaces and trailing dots/spaces in *each* path component. Validate
+    // against those resolved names, not the manifest's literal spelling.
+    function fatKey(rel) {
+      const parts = rel.split('/').map((part) =>
+        part.replace(/^ +/, '').replace(/[. ]+$/, '').toLowerCase()
+      );
+      if (parts.some((part) => !part || part === '.' || part === '..')) {
+        throw new Error('unsafe FAT plugin file path: ' + rel);
+      }
+      return parts.join('/');
+    }
+    const normalized = files.map(fatKey);
     if (normalized.some((rel) => rel.split('/').pop() === 'token.json')) {
       throw new Error('plugin packages must not overwrite token.json');
     }
     if (new Set(normalized).size !== files.length) {
-      throw new Error('duplicate plugin path (case-insensitive filesystem)');
+      throw new Error('duplicate plugin path (FAT-normalized filesystem)');
     }
     // Plugin Hub reinstalls and updates in-place. Preserve locally modified
     // config.json even when it appears in manifest.files; first installs
@@ -430,7 +440,7 @@ CrossPoint.registerPlugin(async (container, api) => {
     for (let i = 0; i < files.length; i++) {
       if (onProgress) onProgress(i, files.length);
       const rel = files[i];
-      if (preserve.has(rel.toLowerCase())) continue;
+      if (preserve.has(normalized[i])) continue;
 
       const segments = rel.split('/');
       segments.pop();
