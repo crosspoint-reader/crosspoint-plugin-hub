@@ -738,18 +738,37 @@ CrossPoint.registerPlugin(async (container, api) => {
 
   // Wallpaper packs are native data collections, not browser plugins.
   // Only show this section when the connected firmware exposes the API.
+  const WALLPAPER_PACKS_TIMEOUT_MS = 3000;
+  let wallpaperListGeneration = 0;
   async function renderInstalledWallpaperPacks() {
+    const generation = ++wallpaperListGeneration;
     wallpapersEl.innerHTML = '';
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
+    let timeoutId;
     let packs;
     try {
-      const response = await fetch('/api/wallpaper-packs');
-      if (response.status === 404) return;
-      if (!response.ok) throw new Error('HTTP ' + response.status);
-      packs = await response.json();
-      if (!Array.isArray(packs)) return;
+      const request = (async () => {
+        const response = await fetch('/api/wallpaper-packs',
+          controller ? {signal: controller.signal} : undefined);
+        if (response.status === 404) return null;
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.json();
+      })();
+      packs = await Promise.race([
+        request,
+        new Promise(resolve => {
+          timeoutId = setTimeout(() => {
+            if (controller) controller.abort();
+            resolve(null);
+          }, WALLPAPER_PACKS_TIMEOUT_MS);
+        })
+      ]);
+      if (generation !== wallpaperListGeneration || !Array.isArray(packs)) return;
     } catch (e) {
-      // Older firmware has no wallpaper-pack API; preserve the regular plugin UI.
+      // Older firmware or a timed-out API must not block ordinary plugin management.
       return;
+    } finally {
+      clearTimeout(timeoutId);
     }
 
     const installedPacks = packs.filter(pack =>
@@ -824,7 +843,8 @@ CrossPoint.registerPlugin(async (container, api) => {
     await saveConfig();
     renderCatalogs();
     listEl.innerHTML = '';
-    await renderInstalledWallpaperPacks();
+    // Wallpaper metadata is optional; never delay catalog loading for it.
+    void renderInstalledWallpaperPacks();
 
     const url = selectedCatalog;
     status('Loading ' + selectedCatalogLabel() + '…');
@@ -833,7 +853,7 @@ CrossPoint.registerPlugin(async (container, api) => {
     try {
       catalog = JSON.parse(await relayText(url));
     } catch (e) {
-      if (wallpapersEl.children.length) listEl.appendChild(wallpapersEl);
+      listEl.appendChild(wallpapersEl);
       status('Error loading ' + selectedCatalogLabel() + ': ' + e.message);
       return;
     }
@@ -870,7 +890,7 @@ CrossPoint.registerPlugin(async (container, api) => {
       if (pendingReinstall && plugin.name === requestedPlugin) requestedCard = card;
     }
 
-    if (wallpapersEl.children.length) listEl.appendChild(wallpapersEl);
+    listEl.appendChild(wallpapersEl);
 
     if (pendingReinstall) {
       if (!requestedCard || !installed.has(requestedPlugin)) {
