@@ -90,6 +90,8 @@ Plugin updates preserve the existing discovered plugin root. In the browser Plug
 
 `plugin.js` provides the browser-side management UI wherever the firmware hosts browser plugins. It can browse Community, install/update/reinstall/remove plugins, show installed/catalog versions, and use custom catalog URLs. Action buttons are right-aligned, with yellow **Reinstall** and red **Remove** controls. A browser host may optionally open Plugin Hub with a selected plugin and a reinstall request; Plugin Hub handles it through the existing catalog installer, without requiring any special firmware implementation. Uninstalling a plugin removes its installation files; independently stored plugin data is left untouched if the firmware provides such storage.
 
+When firmware exposes the optional `GET /api/wallpaper-packs` and `POST /api/wallpaper-packs/delete` endpoints, the WebUI also displays installed wallpaper packs below the plugin catalog, including manifest author and version when provided, with the same red **Remove** buttons. Without those endpoints, the wallpaper section is hidden and plugin management is unchanged. Wallpaper packs are data packages, not browser plugins.
+
 Custom catalogs remain separate from the built-in Community catalog and are a browser-side Plugin Hub feature.
 
 ## Trust model

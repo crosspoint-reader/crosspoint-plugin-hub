@@ -59,6 +59,8 @@ CrossPoint.registerPlugin(async (container, api) => {
   const catalogsEl = document.getElementById('ph-catalogs');
   const customCatalogsEl = document.getElementById('ph-custom-catalogs');
   const listEl = document.getElementById('ph-list');
+  const wallpapersEl = document.createElement('div');
+  wallpapersEl.id = 'ph-wallpapers';
   const manageParams = typeof location !== 'undefined' && typeof URLSearchParams !== 'undefined'
     ? new URLSearchParams(location.search) : null;
   const requestedPlugin = String(manageParams?.get('manage') || '');
@@ -734,10 +736,115 @@ CrossPoint.registerPlugin(async (container, api) => {
     return card;
   }
 
+  // Wallpaper packs are native data collections, not browser plugins.
+  // Only show this section when the connected firmware exposes the API.
+  const WALLPAPER_PACKS_TIMEOUT_MS = 3000;
+  let wallpaperListGeneration = 0;
+  async function renderInstalledWallpaperPacks() {
+    const generation = ++wallpaperListGeneration;
+    wallpapersEl.innerHTML = '';
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
+    let timeoutId;
+    let packs;
+    try {
+      const request = (async () => {
+        const response = await fetch('/api/wallpaper-packs',
+          controller ? {signal: controller.signal} : undefined);
+        if (response.status === 404) return null;
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.json();
+      })();
+      packs = await Promise.race([
+        request,
+        new Promise(resolve => {
+          timeoutId = setTimeout(() => {
+            if (controller) controller.abort();
+            resolve(null);
+          }, WALLPAPER_PACKS_TIMEOUT_MS);
+        })
+      ]);
+      if (generation !== wallpaperListGeneration || !Array.isArray(packs)) return;
+    } catch (e) {
+      // Older firmware or a timed-out API must not block ordinary plugin management.
+      return;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
+    const installedPacks = packs.filter(pack =>
+      pack && typeof pack.id === 'string' && pack.id &&
+      typeof pack.title === 'string');
+    if (!installedPacks.length) return;
+
+    const heading = document.createElement('h3');
+    heading.textContent = 'Installed Wallpaper Packs';
+    heading.style.margin = '0.8em 0 0.2em';
+
+    wallpapersEl.appendChild(heading);
+
+    for (const pack of installedPacks) {
+      const row = document.createElement('div');
+      row.className = 'setting-row';
+
+      const meta = document.createElement('span');
+      meta.className = 'setting-name';
+      const title = document.createElement('strong');
+      title.textContent = pack.title;
+      meta.appendChild(title);
+      if (typeof pack.author === 'string' && pack.author) {
+        const author = document.createElement('span');
+        author.style.color = '#888';
+        author.textContent = ' by ' + pack.author;
+        meta.appendChild(author);
+      }
+      const state = document.createElement('span');
+      state.style.color = '#27ae60';
+      const version = typeof pack.version === 'string' && pack.version ? ' v' + pack.version : '';
+      state.textContent = ' Installed' + version + (pack.selected ? ' · Selected' : '');
+      meta.appendChild(state);
+      if (typeof pack.description === 'string' && pack.description) {
+        const description = document.createElement('span');
+        description.style.color = '#666';
+        description.textContent = pack.description;
+        meta.append(document.createElement('br'), description);
+      }
+
+      const controls = document.createElement('span');
+      controls.className = 'setting-control';
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'btn-small ph-btn-remove';
+      remove.textContent = 'Remove';
+      remove.onclick = async () => {
+        if (typeof confirm === 'function' &&
+            !confirm('Remove wallpaper pack ' + pack.title + ' from the SD card?')) return;
+        remove.disabled = true;
+        try {
+          const response = await fetch('/api/wallpaper-packs/delete', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({id: pack.id})
+          });
+          if (!response.ok) throw new Error('HTTP ' + response.status);
+          status('Removed wallpaper pack ' + pack.title + '.');
+          await renderInstalledWallpaperPacks();
+        } catch (e) {
+          status('Error removing wallpaper pack: ' + e.message);
+          remove.disabled = false;
+        }
+      };
+      controls.appendChild(remove);
+      row.append(meta, controls);
+      wallpapersEl.appendChild(row);
+    }
+  }
+
   async function refresh() {
     await saveConfig();
     renderCatalogs();
     listEl.innerHTML = '';
+    // Wallpaper metadata is optional; never delay catalog loading for it.
+    void renderInstalledWallpaperPacks();
 
     const url = selectedCatalog;
     status('Loading ' + selectedCatalogLabel() + '…');
@@ -746,6 +853,7 @@ CrossPoint.registerPlugin(async (container, api) => {
     try {
       catalog = JSON.parse(await relayText(url));
     } catch (e) {
+      listEl.appendChild(wallpapersEl);
       status('Error loading ' + selectedCatalogLabel() + ': ' + e.message);
       return;
     }
@@ -781,6 +889,8 @@ CrossPoint.registerPlugin(async (container, api) => {
       listEl.appendChild(card);
       if (pendingReinstall && plugin.name === requestedPlugin) requestedCard = card;
     }
+
+    listEl.appendChild(wallpapersEl);
 
     if (pendingReinstall) {
       if (!requestedCard || !installed.has(requestedPlugin)) {

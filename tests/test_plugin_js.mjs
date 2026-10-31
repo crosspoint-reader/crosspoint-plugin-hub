@@ -37,6 +37,10 @@ class Element {
     return this._innerHTML;
   }
 
+  append(...children) {
+    this.children.push(...children);
+  }
+
   appendChild(child) {
     this.children.push(child);
     return child;
@@ -95,6 +99,9 @@ async function loadPlugin(globals = {}) {
     },
     URL,
     TextEncoder,
+    setTimeout,
+    clearTimeout,
+    AbortController,
     Set,
     Map,
     Array,
@@ -469,6 +476,152 @@ test('browser hub falls back to built-in catalog URLs when list index is unavail
   assert.match(catalogRows[0].children[0].innerHTML, /Community Plugins/);
   assert.equal(catalogRows[0].children[1].textContent, 'Selected');
   assert.match(document.elements['ph-status'].textContent, /0 plugins available/);
+});
+
+function deferred() {
+  let resolve;
+  const promise = new Promise(done => { resolve = done; });
+  return { promise, resolve };
+}
+
+async function mountWallpaperHub(wallpaperFetch, globals = {}) {
+  const document = fakeDocument();
+  async function fetch(url, options) {
+    if (url.startsWith('/api/wallpaper-packs')) return wallpaperFetch(url, options);
+    if (url === '/api/status') return response({json: {deviceModel: 'x3', psramBytes: 0}});
+    if (url.startsWith('/download?path=')) return response({status: 404});
+    if (url.startsWith('/api/files?path=')) return response({json: []});
+    throw new Error('unexpected fetch: ' + url);
+  }
+  const api = {
+    async writeFile() { return {ok: true}; },
+    async relay(method, url) {
+      assert.equal(method, 'GET');
+      if (url === LIST_INDEX) {
+        return {status: 200, body: JSON.stringify({
+          lists: [{title: 'Community Plugins', url: COMMUNITY_CATALOG}]
+        })};
+      }
+      if (url.endsWith('/releases/latest')) {
+        return {status: 200, body: JSON.stringify({tag_name: 'v0.1.13'})};
+      }
+      if (url === COMMUNITY_CATALOG) {
+        return {status: 200, body: JSON.stringify({
+          name: 'Community Plugins',
+          plugins: [{
+            name: 'sampleplugin', title: 'Sample Plugin', version: '1.0.0',
+            base: 'https://example.test/sample/', files: ['manifest.json']
+          }]
+        })};
+      }
+      return {status: 404, body: ''};
+    },
+    async fetchToSd() { return {status: 200}; }
+  };
+  const render = await loadPlugin({document, fetch, confirm: () => true, ...globals});
+  await render({innerHTML: ''}, api);
+  await new Promise(resolve => setImmediate(resolve));
+  return document;
+}
+
+function wallpaperSection(document) {
+  return document.elements['ph-list'].children.find(child => child.id === 'ph-wallpapers');
+}
+
+test('wallpaper removal cannot be undone by an older list response', async () => {
+  const pack = {id: 'snoopy', title: 'Snoopy', version: '1.0.0'};
+  const deletion = deferred();
+  const oldList = deferred();
+  let listRequests = 0;
+  const document = await mountWallpaperHub((url) => {
+    if (url === '/api/wallpaper-packs') {
+      listRequests += 1;
+      if (listRequests === 1) return response({json: [pack]});
+      if (listRequests === 2) return oldList.promise;
+      return response({json: []});
+    }
+    if (url === '/api/wallpaper-packs/delete') return deletion.promise;
+    throw new Error('unexpected wallpaper URL: ' + url);
+  });
+
+  const section = wallpaperSection(document);
+  assert.ok(section);
+  assert.equal(section.children.length, 2);
+  const remove = section.children[1].children[1].children[0];
+  const removing = remove.onclick();
+  await document.elements['ph-refresh'].onclick();
+  assert.equal(listRequests, 2);
+
+  deletion.resolve(response());
+  await removing;
+  assert.equal(listRequests, 3);
+  assert.equal(section.children.length, 0);
+
+  oldList.resolve(response({json: [pack]}));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(section.children.length, 0, 'stale list must not restore deleted pack');
+  assert.equal(document.elements['ph-list'].children.some(child =>
+    child.id === 'ph-plugin-sampleplugin'), true);
+});
+
+test('unresponsive wallpaper API never blocks plugins and times out safely', async () => {
+  const hanging = deferred();
+  let deadline;
+  let aborted = false;
+  let cancelled = false;
+  const document = await mountWallpaperHub((url, options) => {
+    assert.equal(url, '/api/wallpaper-packs');
+    options.signal.addEventListener('abort', () => { aborted = true; });
+    return hanging.promise;
+  }, {
+    setTimeout(callback, ms) {
+      assert.equal(ms, 3000);
+      deadline = callback;
+      return 1;
+    },
+    clearTimeout(id) {
+      assert.equal(id, 1);
+      cancelled = true;
+    }
+  });
+
+  assert.equal(typeof deadline, 'function');
+  assert.match(document.elements['ph-status'].textContent, /1 plugin available/);
+  assert.ok(document.elements['ph-list'].children.some(child =>
+    child.id === 'ph-plugin-sampleplugin'));
+  deadline();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(aborted, true);
+  assert.equal(cancelled, true);
+
+  hanging.resolve(response({json: [{id: 'stale', title: 'Stale Pack'}]}));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(wallpaperSection(document).children.length, 0);
+});
+
+test('wallpaper response body timeout works without AbortController', async () => {
+  let deadline;
+  const document = await mountWallpaperHub((url) => {
+    assert.equal(url, '/api/wallpaper-packs');
+    return {
+      ok: true, status: 200,
+      json: () => new Promise(() => {})
+    };
+  }, {
+    AbortController: undefined,
+    setTimeout(callback, ms) {
+      assert.equal(ms, 3000);
+      deadline = callback;
+      return 1;
+    },
+    clearTimeout() {}
+  });
+
+  assert.match(document.elements['ph-status'].textContent, /1 plugin available/);
+  assert.equal(typeof deadline, 'function');
+  deadline();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(wallpaperSection(document).children.length, 0);
 });
 
 test('browser hub preserves alternate plugin root for updates and removal', async () => {
