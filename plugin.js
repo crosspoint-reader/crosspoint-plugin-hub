@@ -734,10 +734,21 @@ CrossPoint.registerPlugin(async (container, api) => {
     return card;
   }
 
+  // Swaps the plugin list in one step. Clearing it before the slow catalog
+  // requests collapsed the page and made the browser jump up after installs.
+  function showList(nodes) {
+    listEl.innerHTML = '';
+    for (const node of nodes) listEl.appendChild(node);
+    listEl.style.pointerEvents = '';
+    listEl.style.opacity = '';
+  }
+
   async function refresh() {
     await saveConfig();
     renderCatalogs();
-    listEl.innerHTML = '';
+    // Keep the current list visible but inactive until the new one is ready.
+    listEl.style.pointerEvents = 'none';
+    listEl.style.opacity = '0.6';
 
     const url = selectedCatalog;
     status('Loading ' + selectedCatalogLabel() + '…');
@@ -746,6 +757,7 @@ CrossPoint.registerPlugin(async (container, api) => {
     try {
       catalog = JSON.parse(await relayText(url));
     } catch (e) {
+      showList([]);
       status('Error loading ' + selectedCatalogLabel() + ': ' + e.message);
       return;
     }
@@ -761,12 +773,13 @@ CrossPoint.registerPlugin(async (container, api) => {
     const plugins = (Array.isArray(catalog.plugins) ? catalog.plugins : [])
       .filter(plugin => installed.has(plugin.name) || recommendedForHardware(plugin, hardware));
     let updates = 0;
+    const nodes = [];
 
     if (plugins.length) {
       const header = document.createElement('h3');
       header.textContent = catalogName;
       header.style.margin = '0.8em 0 0.2em';
-      listEl.appendChild(header);
+      nodes.push(header);
     }
 
     let requestedCard = null;
@@ -778,9 +791,10 @@ CrossPoint.registerPlugin(async (container, api) => {
         updates += 1;
       }
       const card = pluginCard(plugin, installed);
-      listEl.appendChild(card);
+      nodes.push(card);
       if (pendingReinstall && plugin.name === requestedPlugin) requestedCard = card;
     }
+    showList(nodes);
 
     if (pendingReinstall) {
       if (!requestedCard || !installed.has(requestedPlugin)) {
