@@ -586,3 +586,69 @@ test('browser hub preserves alternate plugin root for updates and removal', asyn
     '/plugins/altplugin',
   ]);
 });
+
+test('refresh keeps the current list until the new one is ready', async () => {
+  const document = fakeDocument();
+  const catalog = (title) => ({
+    name: 'Community Plugins',
+    plugins: [{ name: 'sample', title, version: '1.0.0', base: 'https://example.test/s/', files: ['manifest.json'] }],
+  });
+  let pendingCatalog = null;
+  let failCatalog = false;
+
+  async function fetch(url) {
+    if (url === '/api/status') return response({ json: { deviceModel: 'x4', psramBytes: 0 } });
+    if (url.startsWith('/api/files?path=')) return response({ json: [] });
+    if (url.startsWith('/download?path=')) return response({ status: 404 });
+    throw new Error('unexpected fetch: ' + url);
+  }
+
+  const api = {
+    async writeFile() {
+      return { ok: true };
+    },
+    async relay(method, url) {
+      if (url === LIST_INDEX) {
+        return { status: 200, body: JSON.stringify({ lists: [{ title: 'Community Plugins', url: COMMUNITY_CATALOG }] }) };
+      }
+      if (url.includes('/releases/latest')) return { status: 200, body: JSON.stringify({ tag_name: 'v0.1.1' }) };
+      if (url === COMMUNITY_CATALOG) {
+        if (failCatalog) return { status: 404, body: '' };
+        if (pendingCatalog) return pendingCatalog;
+        return { status: 200, body: JSON.stringify(catalog('First')) };
+      }
+      return { status: 404, body: '' };
+    },
+  };
+
+  const render = await loadPlugin({ document, fetch });
+  await render({ innerHTML: '' }, api);
+  const list = document.elements['ph-list'];
+  const titles = () => list.children.filter((c) => c.className === 'setting-row').map((c) => c.id);
+  assert.deepEqual(titles(), ['ph-plugin-sample']);
+  const firstCard = list.children.find((c) => c.className === 'setting-row');
+
+  let resolveCatalog;
+  pendingCatalog = new Promise((resolve) => {
+    resolveCatalog = resolve;
+  });
+  const refreshing = document.elements['ph-refresh'].onclick();
+  await new Promise((resolve) => setImmediate(resolve));
+  // While the catalog loads, the old list stays in place but inactive.
+  assert.ok(list.children.includes(firstCard));
+  assert.equal(list.style.pointerEvents, 'none');
+
+  resolveCatalog({ status: 200, body: JSON.stringify(catalog('Second')) });
+  await refreshing;
+  assert.deepEqual(titles(), ['ph-plugin-sample']);
+  assert.ok(!list.children.includes(firstCard));
+  assert.equal(list.style.pointerEvents, '');
+  assert.equal(list.style.opacity, '');
+
+  pendingCatalog = null;
+  failCatalog = true;
+  await document.elements['ph-refresh'].onclick();
+  assert.equal(list.children.length, 0);
+  assert.equal(list.style.pointerEvents, '');
+  assert.match(document.elements['ph-status'].textContent, /^Error loading/);
+});
