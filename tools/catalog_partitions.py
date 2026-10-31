@@ -1,10 +1,16 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from typing import Any
 
 COMMUNITY_CATALOG_MAX_BYTES = 1024 * 1024
+# CrossPoint's native catalog clamps browse.page_size to MAX_PAGE_SIZE=16 and
+# truncates the fetched JSON list, so a larger single Community list is not
+# browsable past the first 16 rows. Keep every Community partition within one
+# native page; the list picker exposes all partitions.
+NATIVE_PAGE_SIZE = 16
 COMMUNITY_LIST_INDEX = "catalog-lists.json"
 COMMUNITY_NOTICE = {
     "title": "Community Plugins",
@@ -50,6 +56,20 @@ def _range_label(first: str, last: str) -> str:
     return first if first == last else f"{first}-{last}"
 
 
+def _cap_partition_rows(partitions: list[CommunityPartition]) -> list[CommunityPartition]:
+    capped: list[CommunityPartition] = []
+    for partition in partitions:
+        count = len(partition.plugins)
+        if count <= NATIVE_PAGE_SIZE:
+            capped.append(partition)
+            continue
+        chunks = [partition.plugins[i:i + NATIVE_PAGE_SIZE] for i in range(0, count, NATIVE_PAGE_SIZE)]
+        for index, chunk in enumerate(chunks, start=1):
+            base = partition.label or "All"
+            capped.append(CommunityPartition(f"{base} {index}/{len(chunks)}", chunk))
+    return capped
+
+
 def partition_community_plugins(
     plugins: list[dict[str, Any]],
     max_bytes: int = COMMUNITY_CATALOG_MAX_BYTES,
@@ -65,7 +85,7 @@ def partition_community_plugins(
         ),
     )
     if rendered_catalog_size(plugins, "Community Plugins") <= max_bytes:
-        return [CommunityPartition("", plugins)]
+        return _cap_partition_rows([CommunityPartition("", plugins)])
 
     buckets: list[tuple[str, list[dict[str, Any]]]] = []
     for plugin in plugins:
@@ -116,13 +136,13 @@ def partition_community_plugins(
             end_exclusive = start
             used -= 1
         ranges.reverse()
-        return [
+        return _cap_partition_rows([
             CommunityPartition(
                 _range_label(buckets[start][0], buckets[end][0]),
                 group_plugins[(start, end)],
             )
             for start, end in ranges
-        ]
+        ])
 
     largest_size, largest_bucket = max(
         (rendered_catalog_size(items, f"Community Plugins [{label}]"), label)
@@ -140,7 +160,8 @@ def shard_filename(base_filename: str, partition: CommunityPartition) -> str:
     stem, dot, suffix = base_filename.rpartition(".")
     if not dot:
         stem, suffix = base_filename, ""
-    slug = partition.label.lower().replace("#", "other")
+    # Split labels such as "All 1/2" carry characters that are not safe in a file name.
+    slug = re.sub(r"[^a-z0-9]+", "-", partition.label.lower().replace("#", "other")).strip("-")
     return f"{stem}-{slug}{dot}{suffix}"
 
 

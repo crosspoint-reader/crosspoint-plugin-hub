@@ -1151,6 +1151,19 @@ class CatalogBuilderTests(unittest.TestCase):
         self.assertNotEqual(partitions[0].label, "")
         self.assertNotEqual(partitions[1].label, "")
 
+    def test_partition_community_plugins_caps_rows_for_native_page_size(self):
+        plugins = self._synthetic_community_plugins()[:17]
+        partitions = build_catalog.partition_community_plugins(plugins, 1024 * 1024)
+
+        self.assertEqual(len(partitions), 2)
+        for part in partitions:
+            self.assertLessEqual(len(part.plugins), 16)
+        self.assertEqual(
+            [plugin["name"] for part in partitions for plugin in part.plugins],
+            [plugin["name"] for plugin in plugins],
+        )
+        self.assertNotEqual(partitions[0].title, partitions[1].title)
+
     def test_partition_community_plugins_expands_to_three_ranges_when_needed(self):
         plugins = self._synthetic_community_plugins()
         full_size = build_catalog.rendered_catalog_size(plugins, "Community Plugins")
@@ -1211,6 +1224,28 @@ class CatalogBuilderTests(unittest.TestCase):
                 filename = entry["url"].rsplit("/", 1)[-1]
                 self.assertTrue((root / filename).exists())
 
+
+    def test_write_community_catalogs_writes_split_partitions(self):
+        plugins = self._synthetic_community_plugins()[:17]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            community = root / "community-catalog.json"
+            index = root / "catalog-lists.json"
+
+            build_catalog.write_community_catalogs(
+                community,
+                index,
+                plugins,
+                "crosspoint-reader/crosspoint-plugin-hub",
+                "main",
+                1024 * 1024,
+            )
+
+            payload = json.loads(index.read_text(encoding="utf-8"))
+            filenames = [entry["url"].rsplit("/", 1)[-1] for entry in payload["lists"]]
+            self.assertEqual(filenames, ["community-catalog-all-1-2.json", "community-catalog-all-2-2.json"])
+            written = [json.loads((root / name).read_text(encoding="utf-8")) for name in filenames]
+            self.assertEqual(sum(len(catalog["plugins"]) for catalog in written), 17)
 
 
 if __name__ == "__main__":
