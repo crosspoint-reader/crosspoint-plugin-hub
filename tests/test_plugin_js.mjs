@@ -173,6 +173,8 @@ test('browser hub loads custom catalogs and only offers directional updates', as
     if (url === '/api/status') return response({ json: { deviceModel: 'x3', psramBytes: 0 } });
     if (url.startsWith('/download?path=')) {
       const path = new URL(url, 'http://device').searchParams.get('path');
+      // Like the firmware, refuse file names that start with a dot.
+      if (path.split('/').pop().startsWith('.')) return response({ status: 403 });
       if (path === '/.crosspoint/plugin-hub.json') {
         return response({
           text: JSON.stringify({ extraCatalogs: [PRIVATE_CATALOG] }),
@@ -187,7 +189,7 @@ test('browser hub loads custom catalogs and only offers directional updates', as
       if (path === '/.crosspoint/plugins/sampleplugin/manifest.json') {
         return response({ text: JSON.stringify({ version: '0.1.2.1' }) });
       }
-      if (path === '/.crosspoint/plugins/pluginhub/.catalog-cache.json') {
+      if (path === '/.crosspoint/plugins/pluginhub/catalog-cache.json') {
         return response({ text: JSON.stringify(communityCatalog) });
       }
       return response({ status: 404 });
@@ -300,7 +302,7 @@ test('browser hub loads custom catalogs and only offers directional updates', as
   assert.match(document.elements['ph-status'].textContent, /3 plugins available, 1 update/);
 
   assert.deepEqual(fetchToSdCalls, [
-    { url: COMMUNITY_CATALOG, dest: '/.crosspoint/plugins/pluginhub/.catalog-cache.json' },
+    { url: COMMUNITY_CATALOG, dest: '/.crosspoint/plugins/pluginhub/catalog-cache.json' },
   ]);
   assert.equal(deletedCache, true);
 
@@ -332,6 +334,8 @@ test('browser hub adopts api.dir while migrating legacy config', async () => {
     if (url === '/api/status') return response({ json: { deviceModel: 'x3', psramBytes: 0 } });
     if (url.startsWith('/download?path=')) {
       const path = new URL(url, 'http://device').searchParams.get('path');
+      // Like the firmware, refuse file names that start with a dot.
+      if (path.split('/').pop().startsWith('.')) return response({ status: 403 });
       downloadPaths.push(path);
       if (path === '/plugins/pluginhub/config.json') {
         return response({ status: 404 });
@@ -424,6 +428,8 @@ test('browser hub falls back to built-in catalog URLs when list index is unavail
     if (url === '/api/status') return response({ json: { deviceModel: 'x3', psramBytes: 0 } });
     if (url.startsWith('/download?path=')) {
       const path = new URL(url, 'http://device').searchParams.get('path');
+      // Like the firmware, refuse file names that start with a dot.
+      if (path.split('/').pop().startsWith('.')) return response({ status: 403 });
       if (path === '/.crosspoint/plugins/pluginhub/manifest.json') {
         return response({ text: JSON.stringify({ version: '0.1.6' }) });
       }
@@ -493,6 +499,8 @@ test('browser hub preserves alternate plugin root for updates and removal', asyn
   async function fetch(url, options = {}) {
     if (url.startsWith('/download?path=')) {
       const path = new URL(url, 'http://device').searchParams.get('path');
+      // Like the firmware, refuse file names that start with a dot.
+      if (path.split('/').pop().startsWith('.')) return response({ status: 403 });
       if (path === '/.crosspoint/plugins/pluginhub/manifest.json') {
         return response({ text: JSON.stringify({ version: '0.1.6' }) });
       }
