@@ -67,6 +67,7 @@ CrossPoint.registerPlugin(async (container, api) => {
   const catalogsEl = document.getElementById('ph-catalogs');
   const customCatalogsEl = document.getElementById('ph-custom-catalogs');
   const listEl = document.getElementById('ph-list');
+  let refreshGeneration = 0;
   const manageParams = typeof location !== 'undefined' && typeof URLSearchParams !== 'undefined'
     ? new URLSearchParams(location.search) : null;
   const requestedPlugin = String(manageParams?.get('manage') || '');
@@ -307,12 +308,16 @@ CrossPoint.registerPlugin(async (container, api) => {
   // Reads the latest Plugin Hub version from a loaded catalog instead of asking
   // the GitHub API, which would take one more relay on every load.
   function showHubUpdate(catalog) {
+    const versionEl = document.getElementById('ph-version');
+    if (hubVersion) {
+      versionEl.textContent = 'Version: v' + hubVersion;
+      versionEl.style.color = '#666';
+    }
     const entry = (Array.isArray(catalog.plugins) ? catalog.plugins : [])
       .find((plugin) => plugin && plugin.name === 'pluginhub');
     if (!hubVersion || !entry) return;
     const latest = String(entry.version || '').trim().replace(/^v/i, '');
     if (compareVersions(latest, hubVersion) > 0) {
-      const versionEl = document.getElementById('ph-version');
       versionEl.textContent = 'Version: v' + hubVersion + ' — Update available: v' + latest;
       versionEl.style.color = '#c0392b';
     }
@@ -380,7 +385,7 @@ CrossPoint.registerPlugin(async (container, api) => {
   // Returns the parsed JSON at url: from the browser cache unless fresh is set
   // or the copy is old, otherwise through the relay, or /api/fetch for a large
   // body. Only a body that parses is cached.
-  async function remoteJson(url, fresh) {
+  async function remoteJson(url, fresh, generation) {
     const cached = readCache(url);
     if (!fresh && cached && Date.now() - cached.time < CACHE_TTL_MS) {
       try {
@@ -389,7 +394,8 @@ CrossPoint.registerPlugin(async (container, api) => {
     }
     const body = cached && cached.bytes > LARGE_BODY_BYTES ? await fetchLargeText(url) : await relayText(url);
     const parsed = JSON.parse(body);
-    writeCache(url, body);
+    // A superseded refresh must not replace the newest browser-cached catalog.
+    if (generation === undefined || generation === refreshGeneration) writeCache(url, body);
     return parsed;
   }
 
@@ -754,7 +760,8 @@ CrossPoint.registerPlugin(async (container, api) => {
       } catch (e) {
         status('Error: ' + e.message);
         install.textContent = originalLabel;
-        install.disabled = false;
+        // A concurrent refresh may still be displaying this stale card.
+        if (listEl.style.pointerEvents !== 'none') install.disabled = false;
       }
     };
     controls.appendChild(install);
@@ -775,7 +782,7 @@ CrossPoint.registerPlugin(async (container, api) => {
           await refresh();
         } catch (e) {
           status('Error: ' + e.message);
-          remove.disabled = false;
+          if (listEl.style.pointerEvents !== 'none') remove.disabled = false;
         }
       };
       controls.appendChild(document.createTextNode(' '));
@@ -787,42 +794,65 @@ CrossPoint.registerPlugin(async (container, api) => {
     return card;
   }
 
+  // Swaps the plugin list in one step. Clearing it before the slow catalog
+  // requests collapsed the page and made the browser jump up after installs.
+  function showList(nodes) {
+    listEl.innerHTML = '';
+    for (const node of nodes) listEl.appendChild(node);
+    listEl.style.pointerEvents = '';
+    listEl.style.opacity = '';
+  }
+
   async function refresh(options) {
     const fresh = Boolean(options && options.fresh);
+    const generation = ++refreshGeneration;
+    try {
+      await refreshList(generation, fresh);
+    } catch (error) {
+      if (generation !== refreshGeneration) return;
+      showList([]);
+      status('Error loading ' + selectedCatalogLabel() + ': ' + error.message);
+    }
+  }
+
+  async function refreshList(generation, fresh) {
     await saveConfig();
+    if (generation !== refreshGeneration) return;
     renderCatalogs();
-    listEl.innerHTML = '';
+    // Keep the current list visible but inactive until the new one is ready.
+    listEl.style.pointerEvents = 'none';
+    listEl.style.opacity = '0.6';
+    for (const button of listEl.querySelectorAll('button')) button.disabled = true;
 
     const url = selectedCatalog;
     status('Loading ' + selectedCatalogLabel() + '…');
 
-    let catalog;
-    try {
-      catalog = await remoteJson(url, fresh);
-    } catch (e) {
-      status('Error loading ' + selectedCatalogLabel() + ': ' + e.message);
-      return;
-    }
+    const catalog = await remoteJson(url, fresh, generation);
+    if (generation !== refreshGeneration) return;
 
     showHubUpdate(catalog);
 
     const locations = await installedPlugins();
+    if (generation !== refreshGeneration) return;
     const installed = new Map();
     for (const [name, dir] of locations) {
       installed.set(name, { dir, version: await installedVersion(dir) });
+      if (generation !== refreshGeneration) return;
     }
 
     const hardware = await hardwareStatus();
+    if (generation !== refreshGeneration) return;
     const catalogName = catalog.name || selectedCatalogLabel();
     const plugins = (Array.isArray(catalog.plugins) ? catalog.plugins : [])
       .filter(plugin => installed.has(plugin.name) || recommendedForHardware(plugin, hardware));
     let updates = 0;
+    const nodes = [];
 
     if (plugins.length) {
       const header = document.createElement('h3');
       header.textContent = catalogName;
       header.style.margin = '0.8em 0 0.2em';
-      listEl.appendChild(header);
+      nodes.push(header);
     }
 
     let requestedCard = null;
@@ -834,9 +864,10 @@ CrossPoint.registerPlugin(async (container, api) => {
         updates += 1;
       }
       const card = pluginCard(plugin, installed);
-      listEl.appendChild(card);
+      nodes.push(card);
       if (pendingReinstall && plugin.name === requestedPlugin) requestedCard = card;
     }
+    showList(nodes);
 
     if (pendingReinstall) {
       if (!requestedCard || !installed.has(requestedPlugin)) {

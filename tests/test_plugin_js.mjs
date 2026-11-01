@@ -41,6 +41,15 @@ class Element {
     this.children.push(child);
     return child;
   }
+
+  querySelectorAll(tag) {
+    const matches = [];
+    for (const child of this.children) {
+      if (child.tagName === tag) matches.push(child);
+      matches.push(...child.querySelectorAll(tag));
+    }
+    return matches;
+  }
 }
 
 function fakeDocument() {
@@ -708,6 +717,14 @@ test('browser hub reads its own update from the catalog', async () => {
   await (await loadPlugin({ document, fetch: device.fetch }))({ innerHTML: '' }, device.api);
   assert.equal(document.elements['ph-version'].textContent, 'Version: v0.1.1 — Update available: v0.2.0');
   assert.ok(!device.calls.relay.some((url) => url.includes('api.github.com')));
+
+  // Switching to a catalog without Plugin Hub must clear the old update notice.
+  const originalRelay = device.api.relay;
+  device.api.relay = (method, url) => url === COMMUNITY_CATALOG
+    ? Promise.resolve({ status: 200, body: JSON.stringify({ name: 'Custom', plugins: [] }) })
+    : originalRelay(method, url);
+  await document.elements['ph-refresh'].onclick();
+  assert.equal(document.elements['ph-version'].textContent, 'Version: v0.1.1');
 });
 
 test('browser hub writes its config only when it changes', async () => {
@@ -725,4 +742,277 @@ test('browser hub writes its config only when it changes', async () => {
   await freshDocument.elements['ph-refresh'].onclick();
   assert.equal(fresh.calls.writes.length, 1);
   assert.equal(fresh.calls.writes[0].path, '/.crosspoint/plugins/pluginhub/config.json');
+});
+
+test('refresh keeps the current list until the new one is ready', async () => {
+  const document = fakeDocument();
+  const catalog = (title) => ({
+    name: 'Community Plugins',
+    plugins: [{ name: 'sample', title, version: '1.0.0', base: 'https://example.test/s/', files: ['manifest.json'] }],
+  });
+  let pendingCatalog = null;
+  let failCatalog = false;
+
+  async function fetch(url) {
+    if (url === '/api/status') return response({ json: { deviceModel: 'x4', psramBytes: 0 } });
+    if (url.startsWith('/api/files?path=')) return response({ json: [] });
+    if (url.startsWith('/download?path=')) return response({ status: 404 });
+    throw new Error('unexpected fetch: ' + url);
+  }
+
+  const api = {
+    async writeFile() {
+      return { ok: true };
+    },
+    async relay(method, url) {
+      if (url === LIST_INDEX) {
+        return { status: 200, body: JSON.stringify({ lists: [{ title: 'Community Plugins', url: COMMUNITY_CATALOG }] }) };
+      }
+      if (url.includes('/releases/latest')) return { status: 200, body: JSON.stringify({ tag_name: 'v0.1.1' }) };
+      if (url === COMMUNITY_CATALOG) {
+        if (failCatalog) return { status: 404, body: '' };
+        if (pendingCatalog) return pendingCatalog;
+        return { status: 200, body: JSON.stringify(catalog('First')) };
+      }
+      return { status: 404, body: '' };
+    },
+  };
+
+  const render = await loadPlugin({ document, fetch });
+  await render({ innerHTML: '' }, api);
+  const list = document.elements['ph-list'];
+  const titles = () => list.children.filter((c) => c.className === 'setting-row').map((c) => c.id);
+  assert.deepEqual(titles(), ['ph-plugin-sample']);
+  const firstCard = list.children.find((c) => c.className === 'setting-row');
+
+  let resolveCatalog;
+  pendingCatalog = new Promise((resolve) => {
+    resolveCatalog = resolve;
+  });
+  const refreshing = document.elements['ph-refresh'].onclick();
+  await new Promise((resolve) => setImmediate(resolve));
+  // While the catalog loads, the old list stays in place but inactive.
+  assert.ok(list.children.includes(firstCard));
+  assert.equal(list.style.pointerEvents, 'none');
+  assert.ok(list.querySelectorAll('button').every((button) => button.disabled),
+    'retained buttons must not be keyboard-activatable');
+
+  resolveCatalog({ status: 200, body: JSON.stringify(catalog('Second')) });
+  await refreshing;
+  assert.deepEqual(titles(), ['ph-plugin-sample']);
+  assert.ok(!list.children.includes(firstCard));
+  assert.equal(list.style.pointerEvents, '');
+  assert.equal(list.style.opacity, '');
+  assert.ok(list.querySelectorAll('button').every((button) => !button.disabled),
+    'replacement buttons should be enabled');
+
+  pendingCatalog = null;
+  failCatalog = true;
+  await document.elements['ph-refresh'].onclick();
+  assert.equal(list.children.length, 0);
+  assert.equal(list.style.pointerEvents, '');
+  assert.match(document.elements['ph-status'].textContent, /^Error loading/);
+});
+
+test('overlapping refreshes ignore stale failures and successful responses', async () => {
+  const document = fakeDocument();
+  const catalog = (title) => ({
+    name: 'Community Plugins',
+    plugins: [{ name: 'sample', title, version: '1.0.0', base: 'https://example.test/s/', files: ['manifest.json'] }],
+  });
+  const requests = [];
+  let firstLoad = true;
+  const api = {
+    async writeFile() {
+      return { ok: true };
+    },
+    async relay(method, url) {
+      if (url === LIST_INDEX) {
+        return { status: 200, body: JSON.stringify({ lists: [{ title: 'Community Plugins', url: COMMUNITY_CATALOG }] }) };
+      }
+      if (url.includes('/releases/latest')) return { status: 200, body: JSON.stringify({ tag_name: 'v0.1.1' }) };
+      if (url === COMMUNITY_CATALOG) {
+        if (firstLoad) {
+          firstLoad = false;
+          return { status: 200, body: JSON.stringify(catalog('Initial')) };
+        }
+        return new Promise((resolve, reject) => requests.push({ resolve, reject }));
+      }
+      return { status: 404, body: '' };
+    },
+  };
+  async function fetch(url) {
+    if (url === '/api/status') return response({ json: { deviceModel: 'x4', psramBytes: 0 } });
+    if (url.startsWith('/api/files?path=')) return response({ json: [] });
+    if (url.startsWith('/download?path=')) return response({ status: 404 });
+    throw new Error('unexpected fetch: ' + url);
+  }
+
+  const localStorage = fakeStorage();
+  const render = await loadPlugin({ document, fetch, localStorage });
+  await render({ innerHTML: '' }, api);
+  const list = document.elements['ph-list'];
+  const refresh = () => document.elements['ph-refresh'].onclick();
+  const currentTitle = () => list.children.find((c) => c.id === 'ph-plugin-sample')?.children[0].innerHTML;
+  const tick = () => new Promise((resolve) => setImmediate(resolve));
+
+  const oldFailure = refresh();
+  await tick();
+  const latest = refresh();
+  await tick();
+  assert.equal(requests.length, 2);
+  requests[1].resolve({ status: 200, body: JSON.stringify(catalog('Latest')) });
+  await latest;
+  const latestCard = list.children.find((c) => c.id === 'ph-plugin-sample');
+  assert.match(currentTitle(), /Latest/);
+  requests[0].reject(new Error('old catalog failed'));
+  await oldFailure;
+  assert.ok(list.children.includes(latestCard));
+  assert.match(currentTitle(), /Latest/);
+  assert.equal(document.elements['ph-status'].textContent, '1 plugin available.');
+  assert.equal(list.style.pointerEvents, '');
+
+  const oldSuccess = refresh();
+  await tick();
+  const newest = refresh();
+  await tick();
+  assert.equal(requests.length, 4);
+  requests[3].resolve({ status: 200, body: JSON.stringify(catalog('Newest')) });
+  await newest;
+  requests[2].resolve({ status: 200, body: JSON.stringify(catalog('Obsolete')) });
+  await oldSuccess;
+  assert.match(currentTitle(), /Newest/);
+  assert.doesNotMatch(currentTitle(), /Obsolete/);
+  const cached = JSON.parse(localStorage.data.get('pluginhub.remote:' + COMMUNITY_CATALOG));
+  assert.match(cached.body, /Newest/);
+  assert.doesNotMatch(cached.body, /Obsolete/, 'a stale response must not overwrite the cache');
+  assert.equal(document.elements['ph-status'].textContent, '1 plugin available.');
+});
+
+test('failed actions do not re-enable stale buttons during a refresh', async () => {
+  for (const kind of ['install', 'remove']) {
+    const document = fakeDocument();
+    const catalog = {
+      name: 'Community Plugins',
+      plugins: [{ name: 'sample', title: 'Sample', version: '1.0.0', base: 'https://example.test/s/', files: ['manifest.json'] }],
+    };
+    let pendingRefresh = false;
+    let resolveCatalog;
+    let rejectAction;
+    let signalActionStarted;
+    const actionStarted = new Promise((resolve) => { signalActionStarted = resolve; });
+
+    async function fetch(url) {
+      if (url === '/api/status') return response({ json: { deviceModel: 'x4', psramBytes: 0 } });
+      if (url.startsWith('/download?path=')) return response({ status: 404 });
+      if (url.startsWith('/api/files?path=')) {
+        const path = new URL(url, 'http://device').searchParams.get('path');
+        return response({ json: path === '/.crosspoint/plugins'
+          ? [{ name: 'sample', isDirectory: true }] : [] });
+      }
+      if (url === '/mkdir') return response({});
+      if (url === '/delete') {
+        if (kind === 'remove') {
+          return new Promise((_resolve, reject) => {
+            rejectAction = reject;
+            signalActionStarted();
+          });
+        }
+        return response({});
+      }
+      throw new Error('unexpected fetch: ' + url);
+    }
+
+    const api = {
+      async writeFile() { return { ok: true }; },
+      async relay(_method, url) {
+        if (url === LIST_INDEX) {
+          return { status: 200, body: JSON.stringify({ lists: [{ title: 'Community Plugins', url: COMMUNITY_CATALOG }] }) };
+        }
+        if (url.includes('/releases/latest')) return { status: 200, body: JSON.stringify({ tag_name: 'v0.1.1' }) };
+        if (url === COMMUNITY_CATALOG) {
+          if (pendingRefresh) {
+            return new Promise((resolve) => { resolveCatalog = resolve; });
+          }
+          return { status: 200, body: JSON.stringify(catalog) };
+        }
+        return { status: 404, body: '' };
+      },
+      async fetchToSd() {
+        if (kind === 'install') {
+          return new Promise((_resolve, reject) => {
+            rejectAction = reject;
+            signalActionStarted();
+          });
+        }
+        return { status: 200 };
+      },
+    };
+
+    const render = await loadPlugin({ document, fetch });
+    await render({ innerHTML: '' }, api);
+    const list = document.elements['ph-list'];
+    const oldCard = list.children.find((child) => child.id === 'ph-plugin-sample');
+    const buttons = oldCard.querySelectorAll('button');
+    const actionButton = kind === 'install' ? buttons[0] : buttons[1];
+    assert.ok(actionButton, kind + ' button exists');
+
+    const runningAction = actionButton.onclick();
+    await actionStarted;
+    pendingRefresh = true;
+    const refreshing = document.elements['ph-refresh'].onclick();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(list.style.pointerEvents, 'none');
+    assert.ok(buttons.every((button) => button.disabled));
+
+    rejectAction(new Error('simulated ' + kind + ' failure'));
+    await runningAction;
+    assert.equal(actionButton.disabled, true, kind + ' failure must not reactivate its stale button');
+    assert.ok(buttons.every((button) => button.disabled));
+
+    resolveCatalog({ status: 200, body: JSON.stringify(catalog) });
+    await refreshing;
+    assert.ok(!list.children.includes(oldCard));
+    assert.ok(list.querySelectorAll('button').every((button) => !button.disabled));
+  }
+});
+
+test('unexpected refresh failure clears loading state', async () => {
+  const document = fakeDocument();
+  // Simulate an unexpected DOM failure rather than an unchanged config write.
+  const api = {
+    async writeFile() {
+      // A previously saved, unchanged config no longer needs a write.
+      return { ok: true };
+    },
+    async relay(method, url) {
+      if (url === LIST_INDEX) {
+        return { status: 200, body: JSON.stringify({ lists: [{ title: 'Community Plugins', url: COMMUNITY_CATALOG }] }) };
+      }
+      if (url.includes('/releases/latest')) return { status: 200, body: JSON.stringify({ tag_name: 'v0.1.1' }) };
+      if (url === COMMUNITY_CATALOG) {
+        return { status: 200, body: JSON.stringify({
+          name: 'Community Plugins',
+          plugins: [{ name: 'sample', title: 'Sample', version: '1.0.0', base: 'https://example.test/s/', files: ['manifest.json'] }],
+        }) };
+      }
+      return { status: 404, body: '' };
+    },
+  };
+  async function fetch(url) {
+    if (url === '/api/status') return response({ json: { deviceModel: 'x4', psramBytes: 0 } });
+    if (url.startsWith('/api/files?path=')) return response({ json: [] });
+    if (url.startsWith('/download?path=')) return response({ status: 404 });
+    throw new Error('unexpected fetch: ' + url);
+  }
+  const render = await loadPlugin({ document, fetch });
+  await render({ innerHTML: '' }, api);
+  const list = document.elements['ph-list'];
+  assert.ok(list.children.length > 0);
+  document.createElement = () => { throw new Error('DOM unavailable'); };
+  await document.elements['ph-refresh'].onclick();
+  assert.equal(list.children.length, 0);
+  assert.equal(list.style.pointerEvents, '');
+  assert.equal(list.style.opacity, '');
+  assert.match(document.elements['ph-status'].textContent, /Error loading.*DOM unavailable/);
 });
