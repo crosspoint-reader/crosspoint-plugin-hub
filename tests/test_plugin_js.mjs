@@ -737,6 +737,94 @@ test('overlapping refreshes ignore stale failures and successful responses', asy
   assert.equal(document.elements['ph-status'].textContent, '1 plugin available.');
 });
 
+test('failed actions do not re-enable stale buttons during a refresh', async () => {
+  for (const kind of ['install', 'remove']) {
+    const document = fakeDocument();
+    const catalog = {
+      name: 'Community Plugins',
+      plugins: [{ name: 'sample', title: 'Sample', version: '1.0.0', base: 'https://example.test/s/', files: ['manifest.json'] }],
+    };
+    let pendingRefresh = false;
+    let resolveCatalog;
+    let rejectAction;
+    let signalActionStarted;
+    const actionStarted = new Promise((resolve) => { signalActionStarted = resolve; });
+
+    async function fetch(url) {
+      if (url === '/api/status') return response({ json: { deviceModel: 'x4', psramBytes: 0 } });
+      if (url.startsWith('/download?path=')) return response({ status: 404 });
+      if (url.startsWith('/api/files?path=')) {
+        const path = new URL(url, 'http://device').searchParams.get('path');
+        return response({ json: path === '/.crosspoint/plugins'
+          ? [{ name: 'sample', isDirectory: true }] : [] });
+      }
+      if (url === '/mkdir') return response({});
+      if (url === '/delete') {
+        if (kind === 'remove') {
+          return new Promise((_resolve, reject) => {
+            rejectAction = reject;
+            signalActionStarted();
+          });
+        }
+        return response({});
+      }
+      throw new Error('unexpected fetch: ' + url);
+    }
+
+    const api = {
+      async writeFile() { return { ok: true }; },
+      async relay(_method, url) {
+        if (url === LIST_INDEX) {
+          return { status: 200, body: JSON.stringify({ lists: [{ title: 'Community Plugins', url: COMMUNITY_CATALOG }] }) };
+        }
+        if (url.includes('/releases/latest')) return { status: 200, body: JSON.stringify({ tag_name: 'v0.1.1' }) };
+        if (url === COMMUNITY_CATALOG) {
+          if (pendingRefresh) {
+            return new Promise((resolve) => { resolveCatalog = resolve; });
+          }
+          return { status: 200, body: JSON.stringify(catalog) };
+        }
+        return { status: 404, body: '' };
+      },
+      async fetchToSd() {
+        if (kind === 'install') {
+          return new Promise((_resolve, reject) => {
+            rejectAction = reject;
+            signalActionStarted();
+          });
+        }
+        return { status: 200 };
+      },
+    };
+
+    const render = await loadPlugin({ document, fetch });
+    await render({ innerHTML: '' }, api);
+    const list = document.elements['ph-list'];
+    const oldCard = list.children.find((child) => child.id === 'ph-plugin-sample');
+    const buttons = oldCard.querySelectorAll('button');
+    const actionButton = kind === 'install' ? buttons[0] : buttons[1];
+    assert.ok(actionButton, kind + ' button exists');
+
+    const runningAction = actionButton.onclick();
+    await actionStarted;
+    pendingRefresh = true;
+    const refreshing = document.elements['ph-refresh'].onclick();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(list.style.pointerEvents, 'none');
+    assert.ok(buttons.every((button) => button.disabled));
+
+    rejectAction(new Error('simulated ' + kind + ' failure'));
+    await runningAction;
+    assert.equal(actionButton.disabled, true, kind + ' failure must not reactivate its stale button');
+    assert.ok(buttons.every((button) => button.disabled));
+
+    resolveCatalog({ status: 200, body: JSON.stringify(catalog) });
+    await refreshing;
+    assert.ok(!list.children.includes(oldCard));
+    assert.ok(list.querySelectorAll('button').every((button) => !button.disabled));
+  }
+});
+
 test('unexpected refresh failure clears loading state', async () => {
   const document = fakeDocument();
   let failSave = false;

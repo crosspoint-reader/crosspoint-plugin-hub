@@ -702,7 +702,8 @@ CrossPoint.registerPlugin(async (container, api) => {
       } catch (e) {
         status('Error: ' + e.message);
         install.textContent = originalLabel;
-        install.disabled = false;
+        // A concurrent refresh may still be displaying this stale card.
+        if (listEl.style.pointerEvents !== 'none') install.disabled = false;
       }
     };
     controls.appendChild(install);
@@ -723,7 +724,7 @@ CrossPoint.registerPlugin(async (container, api) => {
           await refresh();
         } catch (e) {
           status('Error: ' + e.message);
-          remove.disabled = false;
+          if (listEl.style.pointerEvents !== 'none') remove.disabled = false;
         }
       };
       controls.appendChild(document.createTextNode(' '));
