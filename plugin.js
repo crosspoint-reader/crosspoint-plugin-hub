@@ -59,6 +59,7 @@ CrossPoint.registerPlugin(async (container, api) => {
   const catalogsEl = document.getElementById('ph-catalogs');
   const customCatalogsEl = document.getElementById('ph-custom-catalogs');
   const listEl = document.getElementById('ph-list');
+  let refreshGeneration = 0;
   const manageParams = typeof location !== 'undefined' && typeof URLSearchParams !== 'undefined'
     ? new URLSearchParams(location.search) : null;
   const requestedPlugin = String(manageParams?.get('manage') || '');
@@ -744,31 +745,41 @@ CrossPoint.registerPlugin(async (container, api) => {
   }
 
   async function refresh() {
+    const generation = ++refreshGeneration;
+    try {
+      await refreshList(generation);
+    } catch (error) {
+      if (generation !== refreshGeneration) return;
+      showList([]);
+      status('Error loading ' + selectedCatalogLabel() + ': ' + error.message);
+    }
+  }
+
+  async function refreshList(generation) {
     await saveConfig();
+    if (generation !== refreshGeneration) return;
     renderCatalogs();
     // Keep the current list visible but inactive until the new one is ready.
     listEl.style.pointerEvents = 'none';
     listEl.style.opacity = '0.6';
+    for (const button of listEl.querySelectorAll('button')) button.disabled = true;
 
     const url = selectedCatalog;
     status('Loading ' + selectedCatalogLabel() + '…');
 
-    let catalog;
-    try {
-      catalog = JSON.parse(await relayText(url));
-    } catch (e) {
-      showList([]);
-      status('Error loading ' + selectedCatalogLabel() + ': ' + e.message);
-      return;
-    }
+    const catalog = JSON.parse(await relayText(url));
+    if (generation !== refreshGeneration) return;
 
     const locations = await installedPlugins();
+    if (generation !== refreshGeneration) return;
     const installed = new Map();
     for (const [name, dir] of locations) {
       installed.set(name, { dir, version: await installedVersion(dir) });
+      if (generation !== refreshGeneration) return;
     }
 
     const hardware = await hardwareStatus();
+    if (generation !== refreshGeneration) return;
     const catalogName = catalog.name || selectedCatalogLabel();
     const plugins = (Array.isArray(catalog.plugins) ? catalog.plugins : [])
       .filter(plugin => installed.has(plugin.name) || recommendedForHardware(plugin, hardware));

@@ -41,6 +41,15 @@ class Element {
     this.children.push(child);
     return child;
   }
+
+  querySelectorAll(tag) {
+    const matches = [];
+    for (const child of this.children) {
+      if (child.tagName === tag) matches.push(child);
+      matches.push(...child.querySelectorAll(tag));
+    }
+    return matches;
+  }
 }
 
 function fakeDocument() {
@@ -637,6 +646,8 @@ test('refresh keeps the current list until the new one is ready', async () => {
   // While the catalog loads, the old list stays in place but inactive.
   assert.ok(list.children.includes(firstCard));
   assert.equal(list.style.pointerEvents, 'none');
+  assert.ok(list.querySelectorAll('button').every((button) => button.disabled),
+    'retained buttons must not be keyboard-activatable');
 
   resolveCatalog({ status: 200, body: JSON.stringify(catalog('Second')) });
   await refreshing;
@@ -644,6 +655,8 @@ test('refresh keeps the current list until the new one is ready', async () => {
   assert.ok(!list.children.includes(firstCard));
   assert.equal(list.style.pointerEvents, '');
   assert.equal(list.style.opacity, '');
+  assert.ok(list.querySelectorAll('button').every((button) => !button.disabled),
+    'replacement buttons should be enabled');
 
   pendingCatalog = null;
   failCatalog = true;
@@ -651,4 +664,115 @@ test('refresh keeps the current list until the new one is ready', async () => {
   assert.equal(list.children.length, 0);
   assert.equal(list.style.pointerEvents, '');
   assert.match(document.elements['ph-status'].textContent, /^Error loading/);
+});
+
+test('overlapping refreshes ignore stale failures and successful responses', async () => {
+  const document = fakeDocument();
+  const catalog = (title) => ({
+    name: 'Community Plugins',
+    plugins: [{ name: 'sample', title, version: '1.0.0', base: 'https://example.test/s/', files: ['manifest.json'] }],
+  });
+  const requests = [];
+  let firstLoad = true;
+  const api = {
+    async writeFile() {
+      return { ok: true };
+    },
+    async relay(method, url) {
+      if (url === LIST_INDEX) {
+        return { status: 200, body: JSON.stringify({ lists: [{ title: 'Community Plugins', url: COMMUNITY_CATALOG }] }) };
+      }
+      if (url.includes('/releases/latest')) return { status: 200, body: JSON.stringify({ tag_name: 'v0.1.1' }) };
+      if (url === COMMUNITY_CATALOG) {
+        if (firstLoad) {
+          firstLoad = false;
+          return { status: 200, body: JSON.stringify(catalog('Initial')) };
+        }
+        return new Promise((resolve, reject) => requests.push({ resolve, reject }));
+      }
+      return { status: 404, body: '' };
+    },
+  };
+  async function fetch(url) {
+    if (url === '/api/status') return response({ json: { deviceModel: 'x4', psramBytes: 0 } });
+    if (url.startsWith('/api/files?path=')) return response({ json: [] });
+    if (url.startsWith('/download?path=')) return response({ status: 404 });
+    throw new Error('unexpected fetch: ' + url);
+  }
+
+  const render = await loadPlugin({ document, fetch });
+  await render({ innerHTML: '' }, api);
+  const list = document.elements['ph-list'];
+  const refresh = () => document.elements['ph-refresh'].onclick();
+  const currentTitle = () => list.children.find((c) => c.id === 'ph-plugin-sample')?.children[0].innerHTML;
+  const tick = () => new Promise((resolve) => setImmediate(resolve));
+
+  const oldFailure = refresh();
+  await tick();
+  const latest = refresh();
+  await tick();
+  assert.equal(requests.length, 2);
+  requests[1].resolve({ status: 200, body: JSON.stringify(catalog('Latest')) });
+  await latest;
+  const latestCard = list.children.find((c) => c.id === 'ph-plugin-sample');
+  assert.match(currentTitle(), /Latest/);
+  requests[0].reject(new Error('old catalog failed'));
+  await oldFailure;
+  assert.ok(list.children.includes(latestCard));
+  assert.match(currentTitle(), /Latest/);
+  assert.equal(document.elements['ph-status'].textContent, '1 plugin available.');
+  assert.equal(list.style.pointerEvents, '');
+
+  const oldSuccess = refresh();
+  await tick();
+  const newest = refresh();
+  await tick();
+  assert.equal(requests.length, 4);
+  requests[3].resolve({ status: 200, body: JSON.stringify(catalog('Newest')) });
+  await newest;
+  requests[2].resolve({ status: 200, body: JSON.stringify(catalog('Obsolete')) });
+  await oldSuccess;
+  assert.match(currentTitle(), /Newest/);
+  assert.doesNotMatch(currentTitle(), /Obsolete/);
+  assert.equal(document.elements['ph-status'].textContent, '1 plugin available.');
+});
+
+test('unexpected refresh failure clears loading state', async () => {
+  const document = fakeDocument();
+  let failSave = false;
+  const api = {
+    async writeFile() {
+      if (failSave) throw new Error('SD unavailable');
+      return { ok: true };
+    },
+    async relay(method, url) {
+      if (url === LIST_INDEX) {
+        return { status: 200, body: JSON.stringify({ lists: [{ title: 'Community Plugins', url: COMMUNITY_CATALOG }] }) };
+      }
+      if (url.includes('/releases/latest')) return { status: 200, body: JSON.stringify({ tag_name: 'v0.1.1' }) };
+      if (url === COMMUNITY_CATALOG) {
+        return { status: 200, body: JSON.stringify({
+          name: 'Community Plugins',
+          plugins: [{ name: 'sample', title: 'Sample', version: '1.0.0', base: 'https://example.test/s/', files: ['manifest.json'] }],
+        }) };
+      }
+      return { status: 404, body: '' };
+    },
+  };
+  async function fetch(url) {
+    if (url === '/api/status') return response({ json: { deviceModel: 'x4', psramBytes: 0 } });
+    if (url.startsWith('/api/files?path=')) return response({ json: [] });
+    if (url.startsWith('/download?path=')) return response({ status: 404 });
+    throw new Error('unexpected fetch: ' + url);
+  }
+  const render = await loadPlugin({ document, fetch });
+  await render({ innerHTML: '' }, api);
+  const list = document.elements['ph-list'];
+  assert.ok(list.children.length > 0);
+  failSave = true;
+  await document.elements['ph-refresh'].onclick();
+  assert.equal(list.children.length, 0);
+  assert.equal(list.style.pointerEvents, '');
+  assert.equal(list.style.opacity, '');
+  assert.match(document.elements['ph-status'].textContent, /Error loading.*SD unavailable/);
 });
