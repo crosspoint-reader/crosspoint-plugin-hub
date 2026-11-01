@@ -245,9 +245,6 @@ test('browser hub loads custom catalogs and only offers directional updates', as
           }),
         };
       }
-      if (url.includes('/repos/crosspoint-reader/crosspoint-plugin-hub/releases/latest')) {
-        return { status: 200, body: JSON.stringify({ tag_name: 'v0.1.1' }) };
-      }
       if (url === COMMUNITY_CATALOG) {
         return { status: 502, error: 'relay failed; large bodies need /api/fetch' };
       }
@@ -265,10 +262,8 @@ test('browser hub loads custom catalogs and only offers directional updates', as
   const render = await loadPlugin({ document, fetch });
   await render({ innerHTML: '' }, api);
 
-  assert.equal(relayCalls.length, 3);
-  assert.equal(relayCalls[0], LIST_INDEX);
-  assert.match(relayCalls[1], /crosspoint-plugin-hub\/releases\/latest$/);
-  assert.deepEqual(relayCalls.slice(2), [COMMUNITY_CATALOG]);
+  // No GitHub API call: the update check reads the catalog.
+  assert.deepEqual(relayCalls, [LIST_INDEX, COMMUNITY_CATALOG]);
   assert.equal(document.elements['ph-version'].textContent, 'Version: v0.1.1');
 
   const catalogRows = document.elements['ph-catalogs'].children;
@@ -393,9 +388,6 @@ test('browser hub adopts api.dir while migrating legacy config', async () => {
           }),
         };
       }
-      if (url.includes('/repos/crosspoint-reader/crosspoint-plugin-hub/releases/latest')) {
-        return { status: 200, body: JSON.stringify({ tag_name: 'v0.1.4' }) };
-      }
       if (url === COMMUNITY_CATALOG) {
         return { status: 200, body: JSON.stringify({ name: 'Community Plugins', plugins: [] }) };
       }
@@ -423,7 +415,7 @@ test('browser hub adopts api.dir while migrating legacy config', async () => {
   assert.deepEqual(JSON.parse(writes[0].data), {
     extraCatalogs: [PRIVATE_CATALOG],
   });
-  assert.deepEqual(relayCalls.slice(2), [COMMUNITY_CATALOG]);
+  assert.deepEqual(relayCalls, [LIST_INDEX, COMMUNITY_CATALOG]);
   const customRows = document.elements['ph-custom-catalogs'].children;
   assert.equal(customRows.length, 1);
   assert.equal(customRows[0].children[0].children[0].value, PRIVATE_CATALOG);
@@ -460,9 +452,6 @@ test('browser hub falls back to built-in catalog URLs when list index is unavail
       relayCalls.push(url);
       if (url === LIST_INDEX) {
         return { status: 503, error: 'index unavailable' };
-      }
-      if (url.includes('/repos/crosspoint-reader/crosspoint-plugin-hub/releases/latest')) {
-        return { status: 200, body: JSON.stringify({ tag_name: 'v0.1.6' }) };
       }
       if (url === COMMUNITY_CATALOG) {
         return { status: 200, body: JSON.stringify({ name: 'Community Plugins', plugins: [] }) };
@@ -556,9 +545,6 @@ test('browser hub preserves alternate plugin root for updates and removal', asyn
           }),
         };
       }
-      if (url.includes('/repos/crosspoint-reader/crosspoint-plugin-hub/releases/latest')) {
-        return { status: 200, body: JSON.stringify({ tag_name: 'v0.1.6' }) };
-      }
       if (url === COMMUNITY_CATALOG) {
         return { status: 200, body: JSON.stringify(communityCatalog) };
       }
@@ -602,6 +588,160 @@ test('browser hub preserves alternate plugin root for updates and removal', asyn
     '/plugins/altplugin/plugin.js',
     '/plugins/altplugin',
   ]);
+});
+
+function fakeStorage(entries = {}) {
+  const data = new Map(Object.entries(entries));
+  return {
+    data,
+    getItem: (key) => (data.has(key) ? data.get(key) : null),
+    setItem: (key, value) => data.set(key, String(value)),
+  };
+}
+
+// A device with Plugin Hub 0.1.1 and one other plugin installed, and the given
+// community catalog and config text.
+function hubDevice({ catalog, configText = null }) {
+  const calls = { relay: [], fetchToSd: [], writes: [] };
+  async function fetch(url) {
+    if (url === '/api/status') return response({ json: { deviceModel: 'x4', psramBytes: 0 } });
+    if (url.startsWith('/download?path=')) {
+      const path = new URL(url, 'http://device').searchParams.get('path');
+      if (path === '/.crosspoint/plugins/pluginhub/config.json') {
+        return configText === null ? response({ status: 404 }) : response({ text: configText });
+      }
+      if (path === '/.crosspoint/plugins/pluginhub/manifest.json') {
+        return response({ text: JSON.stringify({ version: '0.1.1' }) });
+      }
+      if (path === '/.crosspoint/plugins/pluginhub/catalog-cache.json') {
+        return response({ text: JSON.stringify(catalog) });
+      }
+      return response({ status: 404 });
+    }
+    if (url.startsWith('/api/files?path=')) {
+      const path = new URL(url, 'http://device').searchParams.get('path');
+      return response({ json: path === '/.crosspoint/plugins' ? [{ name: 'pluginhub', isDirectory: true }] : [] });
+    }
+    if (url === '/delete') return response({});
+    throw new Error('unexpected fetch: ' + url);
+  }
+  const api = {
+    dir: '/.crosspoint/plugins/pluginhub',
+    async writeFile(path, dataB64) {
+      calls.writes.push({ path, data: Buffer.from(dataB64, 'base64').toString('utf8') });
+      return { ok: true };
+    },
+    async relay(method, url) {
+      calls.relay.push(url);
+      if (url === LIST_INDEX) {
+        return { status: 200, body: JSON.stringify({ lists: [{ title: 'Community Plugins', url: COMMUNITY_CATALOG }] }) };
+      }
+      if (url === COMMUNITY_CATALOG) return { status: 200, body: JSON.stringify(catalog) };
+      return { status: 404, body: '' };
+    },
+    async fetchToSd(url, dest) {
+      calls.fetchToSd.push({ url, dest });
+      return { status: 200 };
+    },
+  };
+  return { fetch, api, calls };
+}
+
+const SMALL_CATALOG = {
+  name: 'Community Plugins',
+  plugins: [{ name: 'pluginhub', title: 'Plugin Hub', version: '0.1.1', base: 'https://example.test/hub/', files: ['plugin.js'] }],
+};
+
+test('browser hub reuses cached catalogs until Refresh', async () => {
+  const localStorage = fakeStorage();
+  const first = hubDevice({ catalog: SMALL_CATALOG });
+  await (await loadPlugin({ document: fakeDocument(), fetch: first.fetch, localStorage }))({ innerHTML: '' }, first.api);
+  assert.deepEqual(first.calls.relay, [LIST_INDEX, COMMUNITY_CATALOG]);
+
+  // A page reload within the cache time makes no relay at all.
+  const document = fakeDocument();
+  const second = hubDevice({ catalog: SMALL_CATALOG });
+  await (await loadPlugin({ document, fetch: second.fetch, localStorage }))({ innerHTML: '' }, second.api);
+  assert.deepEqual(second.calls.relay, []);
+  assert.match(document.elements['ph-status'].textContent, /1 plugin available/);
+
+  // Refresh fetches the selected catalog again, but not the list index.
+  await document.elements['ph-refresh'].onclick();
+  assert.deepEqual(second.calls.relay, [COMMUNITY_CATALOG]);
+
+  // An old copy is fetched again.
+  for (const [key, value] of localStorage.data) {
+    localStorage.data.set(key, JSON.stringify({ ...JSON.parse(value), time: Date.now() - 16 * 60 * 1000 }));
+  }
+  const third = hubDevice({ catalog: SMALL_CATALOG });
+  await (await loadPlugin({ document: fakeDocument(), fetch: third.fetch, localStorage }))({ innerHTML: '' }, third.api);
+  assert.deepEqual(third.calls.relay, [LIST_INDEX, COMMUNITY_CATALOG]);
+});
+
+test('browser hub fetches a catalog last seen large through /api/fetch', async () => {
+  const stale = Date.now() - 16 * 60 * 1000;
+  const localStorage = fakeStorage({
+    ['pluginhub.remote:' + COMMUNITY_CATALOG]: JSON.stringify({ time: stale, bytes: 25000, body: JSON.stringify(SMALL_CATALOG) }),
+  });
+  const device = hubDevice({ catalog: SMALL_CATALOG });
+  await (await loadPlugin({ document: fakeDocument(), fetch: device.fetch, localStorage }))({ innerHTML: '' }, device.api);
+  assert.deepEqual(device.calls.relay, [LIST_INDEX]);
+  assert.deepEqual(device.calls.fetchToSd, [
+    { url: COMMUNITY_CATALOG, dest: '/.crosspoint/plugins/pluginhub/catalog-cache.json' },
+  ]);
+  // The new copy is small, so the next fetch uses the relay again.
+  const entry = JSON.parse(localStorage.data.get('pluginhub.remote:' + COMMUNITY_CATALOG));
+  assert.equal(entry.bytes, JSON.stringify(SMALL_CATALOG).length);
+});
+
+test('browser hub does not cache a catalog that is not JSON', async () => {
+  const localStorage = fakeStorage();
+  const device = hubDevice({ catalog: SMALL_CATALOG });
+  const relay = device.api.relay;
+  device.api.relay = async (method, url) =>
+    url === COMMUNITY_CATALOG ? { status: 200, body: '<html>busy</html>' } : relay(method, url);
+  const document = fakeDocument();
+  await (await loadPlugin({ document, fetch: device.fetch, localStorage }))({ innerHTML: '' }, device.api);
+  assert.match(document.elements['ph-status'].textContent, /^Error loading/);
+  assert.ok(!localStorage.data.has('pluginhub.remote:' + COMMUNITY_CATALOG));
+  assert.ok(localStorage.data.has('pluginhub.remote:' + LIST_INDEX));
+});
+
+test('browser hub reads its own update from the catalog', async () => {
+  const catalog = {
+    name: 'Community Plugins',
+    plugins: [{ name: 'pluginhub', title: 'Plugin Hub', version: '0.2.0', base: 'https://example.test/hub/', files: ['plugin.js'] }],
+  };
+  const document = fakeDocument();
+  const device = hubDevice({ catalog });
+  await (await loadPlugin({ document, fetch: device.fetch }))({ innerHTML: '' }, device.api);
+  assert.equal(document.elements['ph-version'].textContent, 'Version: v0.1.1 — Update available: v0.2.0');
+  assert.ok(!device.calls.relay.some((url) => url.includes('api.github.com')));
+
+  // Switching to a catalog without Plugin Hub must clear the old update notice.
+  const originalRelay = device.api.relay;
+  device.api.relay = (method, url) => url === COMMUNITY_CATALOG
+    ? Promise.resolve({ status: 200, body: JSON.stringify({ name: 'Custom', plugins: [] }) })
+    : originalRelay(method, url);
+  await document.elements['ph-refresh'].onclick();
+  assert.equal(document.elements['ph-version'].textContent, 'Version: v0.1.1');
+});
+
+test('browser hub writes its config only when it changes', async () => {
+  const configText = JSON.stringify({ extraCatalogs: [] }, null, 2);
+  const document = fakeDocument();
+  const device = hubDevice({ catalog: SMALL_CATALOG, configText });
+  await (await loadPlugin({ document, fetch: device.fetch }))({ innerHTML: '' }, device.api);
+  await document.elements['ph-refresh'].onclick();
+  assert.deepEqual(device.calls.writes, []);
+
+  // A missing config is written once.
+  const fresh = hubDevice({ catalog: SMALL_CATALOG });
+  const freshDocument = fakeDocument();
+  await (await loadPlugin({ document: freshDocument, fetch: fresh.fetch }))({ innerHTML: '' }, fresh.api);
+  await freshDocument.elements['ph-refresh'].onclick();
+  assert.equal(fresh.calls.writes.length, 1);
+  assert.equal(fresh.calls.writes[0].path, '/.crosspoint/plugins/pluginhub/config.json');
 });
 
 test('refresh keeps the current list until the new one is ready', async () => {
@@ -708,7 +848,8 @@ test('overlapping refreshes ignore stale failures and successful responses', asy
     throw new Error('unexpected fetch: ' + url);
   }
 
-  const render = await loadPlugin({ document, fetch });
+  const localStorage = fakeStorage();
+  const render = await loadPlugin({ document, fetch, localStorage });
   await render({ innerHTML: '' }, api);
   const list = document.elements['ph-list'];
   const refresh = () => document.elements['ph-refresh'].onclick();
@@ -742,6 +883,9 @@ test('overlapping refreshes ignore stale failures and successful responses', asy
   await oldSuccess;
   assert.match(currentTitle(), /Newest/);
   assert.doesNotMatch(currentTitle(), /Obsolete/);
+  const cached = JSON.parse(localStorage.data.get('pluginhub.remote:' + COMMUNITY_CATALOG));
+  assert.match(cached.body, /Newest/);
+  assert.doesNotMatch(cached.body, /Obsolete/, 'a stale response must not overwrite the cache');
   assert.equal(document.elements['ph-status'].textContent, '1 plugin available.');
 });
 
@@ -835,10 +979,10 @@ test('failed actions do not re-enable stale buttons during a refresh', async () 
 
 test('unexpected refresh failure clears loading state', async () => {
   const document = fakeDocument();
-  let failSave = false;
+  // Simulate an unexpected DOM failure rather than an unchanged config write.
   const api = {
     async writeFile() {
-      if (failSave) throw new Error('SD unavailable');
+      // A previously saved, unchanged config no longer needs a write.
       return { ok: true };
     },
     async relay(method, url) {
@@ -865,10 +1009,10 @@ test('unexpected refresh failure clears loading state', async () => {
   await render({ innerHTML: '' }, api);
   const list = document.elements['ph-list'];
   assert.ok(list.children.length > 0);
-  failSave = true;
+  document.createElement = () => { throw new Error('DOM unavailable'); };
   await document.elements['ph-refresh'].onclick();
   assert.equal(list.children.length, 0);
   assert.equal(list.style.pointerEvents, '');
   assert.equal(list.style.opacity, '');
-  assert.match(document.elements['ph-status'].textContent, /Error loading.*SD unavailable/);
+  assert.match(document.elements['ph-status'].textContent, /Error loading.*DOM unavailable/);
 });
