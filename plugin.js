@@ -9,13 +9,21 @@ CrossPoint.registerPlugin(async (container, api) => {
   const CONFIG_PATH = PLUGIN_DIR ? PLUGIN_DIR + '/config.json' : LEGACY_CONFIG_PATH;
   const PLUGIN_ROOTS = ['/.crosspoint/plugins', '/plugins', '/.plugins'];
   const PLUGINS_DIR = PLUGIN_ROOTS[0];
-  const RELEASE_API_URL = 'https://api.github.com/repos/crosspoint-reader/crosspoint-plugin-hub/releases/latest';
   const UNION_CATALOG =
     'https://raw.githubusercontent.com/crosspoint-reader/crosspoint-plugin-hub/main/catalog.json';
   const COMMUNITY_CATALOG =
     'https://raw.githubusercontent.com/crosspoint-reader/crosspoint-plugin-hub/main/community-catalog.json';
   const LIST_INDEX_URL =
     'https://raw.githubusercontent.com/crosspoint-reader/crosspoint-plugin-hub/main/catalog-lists.json';
+
+  // Each relay opens a TLS connection on the device, which needs much of its
+  // memory, so fetched catalogs are kept in the browser for a while. Refresh
+  // fetches the selected catalog again.
+  const CACHE_PREFIX = 'pluginhub.remote:';
+  const CACHE_TTL_MS = 15 * 60 * 1000;
+  // The relay holds the whole body in device memory. A catalog last seen larger
+  // than this goes straight to /api/fetch, which streams it to the SD card.
+  const LARGE_BODY_BYTES = 20 * 1024;
 
   function defaultBuiltInCatalogs() {
     return [
@@ -123,11 +131,19 @@ CrossPoint.registerPlugin(async (container, api) => {
     return builtIn ? builtIn.title : hostOf(selectedCatalog);
   }
 
-  async function readJsonFile(path) {
+  async function readTextFile(path) {
     try {
       const response = await fetch('/download?path=' + encodeURIComponent(path));
-      if (!response.ok) return null;
-      return JSON.parse(await response.text());
+      return response.ok ? await response.text() : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  async function readJsonFile(path) {
+    try {
+      const text = await readTextFile(path);
+      return text === null ? null : JSON.parse(text);
     } catch (e) {
       return null;
     }
@@ -166,9 +182,19 @@ CrossPoint.registerPlugin(async (container, api) => {
     return true;
   }
 
+  // The text of CONFIG_PATH as last read or written, so an unchanged config is
+  // not written again on every refresh.
+  let savedConfigText = null;
+
   async function loadConfig() {
-    const current = await readJsonFile(CONFIG_PATH);
-    if (current) return current;
+    const text = await readTextFile(CONFIG_PATH);
+    try {
+      const current = text === null ? null : JSON.parse(text);
+      if (current) {
+        savedConfigText = text;
+        return current;
+      }
+    } catch (e) {}
 
     if (CONFIG_PATH !== LEGACY_CONFIG_PATH) {
       const legacy = await readJsonFile(LEGACY_CONFIG_PATH);
@@ -185,10 +211,12 @@ CrossPoint.registerPlugin(async (container, api) => {
     ) {
       selectedCatalog = BUILT_IN_CATALOGS[0]?.url || "";
     }
-    return api.writeFile(
-      CONFIG_PATH,
-      b64(JSON.stringify({ extraCatalogs }, null, 2))
-    );
+    const text = JSON.stringify({ extraCatalogs }, null, 2);
+    if (text === savedConfigText) return Promise.resolve();
+    return Promise.resolve(api.writeFile(CONFIG_PATH, b64(text))).then((result) => {
+      savedConfigText = text;
+      return result;
+    });
   }
 
   async function installedPlugins() {
@@ -262,40 +290,32 @@ CrossPoint.registerPlugin(async (container, api) => {
     return 'Installed v' + localVersion;
   }
 
+  let hubVersion = '';
+
   async function checkHubVersion() {
     const versionEl = document.getElementById('ph-version');
-    const installed = String((await hubInstalledVersion()) || '').trim();
-    if (!numericVersion(installed)) {
+    hubVersion = String((await hubInstalledVersion()) || '').trim();
+    if (!numericVersion(hubVersion)) {
+      hubVersion = '';
       versionEl.textContent = 'Version: unavailable';
       return;
     }
-
-    versionEl.textContent = 'Version: v' + installed;
+    versionEl.textContent = 'Version: v' + hubVersion;
     versionEl.style.color = '#666';
+  }
 
-    try {
-      const response = await api.relay(
-        'GET',
-        RELEASE_API_URL,
-        {
-          Accept: 'application/vnd.github+json',
-          'User-Agent': 'PluginHub-CrossPoint'
-        },
-        ''
-      );
-      if (response.error || (response.status && (response.status < 200 || response.status >= 300))) {
-        return;
-      }
-
-      const release = response.body ? JSON.parse(response.body) : {};
-      const latest = String(release.tag_name || '').trim().replace(/^v/i, '');
-      const comparison = compareVersions(latest, installed);
-      if (comparison > 0) {
-        versionEl.textContent =
-          'Version: v' + installed + ' — Update available: v' + latest;
-        versionEl.style.color = '#c0392b';
-      }
-    } catch (e) {}
+  // Reads the latest Plugin Hub version from a loaded catalog instead of asking
+  // the GitHub API, which would take one more relay on every load.
+  function showHubUpdate(catalog) {
+    const entry = (Array.isArray(catalog.plugins) ? catalog.plugins : [])
+      .find((plugin) => plugin && plugin.name === 'pluginhub');
+    if (!hubVersion || !entry) return;
+    const latest = String(entry.version || '').trim().replace(/^v/i, '');
+    if (compareVersions(latest, hubVersion) > 0) {
+      const versionEl = document.getElementById('ph-version');
+      versionEl.textContent = 'Version: v' + hubVersion + ' — Update available: v' + latest;
+      versionEl.style.color = '#c0392b';
+    }
   }
 
   async function fetchLargeText(url) {
@@ -341,8 +361,40 @@ CrossPoint.registerPlugin(async (container, api) => {
     return response.body;
   }
 
+  function readCache(url) {
+    try {
+      const entry = JSON.parse(localStorage.getItem(CACHE_PREFIX + url));
+      return entry && typeof entry.body === 'string' ? entry : null;
+    } catch (e) {
+      return null;  // no localStorage, or an unreadable entry
+    }
+  }
+
+  function writeCache(url, body) {
+    const entry = { time: Date.now(), bytes: new TextEncoder().encode(body).length, body };
+    try {
+      localStorage.setItem(CACHE_PREFIX + url, JSON.stringify(entry));
+    } catch (e) {}
+  }
+
+  // Returns the parsed JSON at url: from the browser cache unless fresh is set
+  // or the copy is old, otherwise through the relay, or /api/fetch for a large
+  // body. Only a body that parses is cached.
+  async function remoteJson(url, fresh) {
+    const cached = readCache(url);
+    if (!fresh && cached && Date.now() - cached.time < CACHE_TTL_MS) {
+      try {
+        return JSON.parse(cached.body);
+      } catch (e) {}
+    }
+    const body = cached && cached.bytes > LARGE_BODY_BYTES ? await fetchLargeText(url) : await relayText(url);
+    const parsed = JSON.parse(body);
+    writeCache(url, body);
+    return parsed;
+  }
+
   async function loadBuiltInCatalogs() {
-    const payload = JSON.parse(await relayText(LIST_INDEX_URL));
+    const payload = await remoteJson(LIST_INDEX_URL);
     const lists = Array.isArray(payload.lists) ? payload.lists : [];
     const normalized = lists
       .filter((entry) => entry && entry.title && entry.url)
@@ -735,7 +787,8 @@ CrossPoint.registerPlugin(async (container, api) => {
     return card;
   }
 
-  async function refresh() {
+  async function refresh(options) {
+    const fresh = Boolean(options && options.fresh);
     await saveConfig();
     renderCatalogs();
     listEl.innerHTML = '';
@@ -745,11 +798,13 @@ CrossPoint.registerPlugin(async (container, api) => {
 
     let catalog;
     try {
-      catalog = JSON.parse(await relayText(url));
+      catalog = await remoteJson(url, fresh);
     } catch (e) {
       status('Error loading ' + selectedCatalogLabel() + ': ' + e.message);
       return;
     }
+
+    showHubUpdate(catalog);
 
     const locations = await installedPlugins();
     const installed = new Map();
@@ -817,7 +872,7 @@ CrossPoint.registerPlugin(async (container, api) => {
     status(message + '.');
   }
 
-  document.getElementById('ph-refresh').onclick = refresh;
+  document.getElementById('ph-refresh').onclick = () => refresh({ fresh: true });
 
   try {
     await loadBuiltInCatalogs();
