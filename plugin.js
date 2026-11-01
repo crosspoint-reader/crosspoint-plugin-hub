@@ -59,6 +59,7 @@ CrossPoint.registerPlugin(async (container, api) => {
   const catalogsEl = document.getElementById('ph-catalogs');
   const customCatalogsEl = document.getElementById('ph-custom-catalogs');
   const listEl = document.getElementById('ph-list');
+  let refreshGeneration = 0;
   const manageParams = typeof location !== 'undefined' && typeof URLSearchParams !== 'undefined'
     ? new URLSearchParams(location.search) : null;
   const requestedPlugin = String(manageParams?.get('manage') || '');
@@ -701,7 +702,8 @@ CrossPoint.registerPlugin(async (container, api) => {
       } catch (e) {
         status('Error: ' + e.message);
         install.textContent = originalLabel;
-        install.disabled = false;
+        // A concurrent refresh may still be displaying this stale card.
+        if (listEl.style.pointerEvents !== 'none') install.disabled = false;
       }
     };
     controls.appendChild(install);
@@ -722,7 +724,7 @@ CrossPoint.registerPlugin(async (container, api) => {
           await refresh();
         } catch (e) {
           status('Error: ' + e.message);
-          remove.disabled = false;
+          if (listEl.style.pointerEvents !== 'none') remove.disabled = false;
         }
       };
       controls.appendChild(document.createTextNode(' '));
@@ -734,39 +736,62 @@ CrossPoint.registerPlugin(async (container, api) => {
     return card;
   }
 
-  async function refresh() {
-    await saveConfig();
-    renderCatalogs();
+  // Swaps the plugin list in one step. Clearing it before the slow catalog
+  // requests collapsed the page and made the browser jump up after installs.
+  function showList(nodes) {
     listEl.innerHTML = '';
+    for (const node of nodes) listEl.appendChild(node);
+    listEl.style.pointerEvents = '';
+    listEl.style.opacity = '';
+  }
+
+  async function refresh() {
+    const generation = ++refreshGeneration;
+    try {
+      await refreshList(generation);
+    } catch (error) {
+      if (generation !== refreshGeneration) return;
+      showList([]);
+      status('Error loading ' + selectedCatalogLabel() + ': ' + error.message);
+    }
+  }
+
+  async function refreshList(generation) {
+    await saveConfig();
+    if (generation !== refreshGeneration) return;
+    renderCatalogs();
+    // Keep the current list visible but inactive until the new one is ready.
+    listEl.style.pointerEvents = 'none';
+    listEl.style.opacity = '0.6';
+    for (const button of listEl.querySelectorAll('button')) button.disabled = true;
 
     const url = selectedCatalog;
     status('Loading ' + selectedCatalogLabel() + '…');
 
-    let catalog;
-    try {
-      catalog = JSON.parse(await relayText(url));
-    } catch (e) {
-      status('Error loading ' + selectedCatalogLabel() + ': ' + e.message);
-      return;
-    }
+    const catalog = JSON.parse(await relayText(url));
+    if (generation !== refreshGeneration) return;
 
     const locations = await installedPlugins();
+    if (generation !== refreshGeneration) return;
     const installed = new Map();
     for (const [name, dir] of locations) {
       installed.set(name, { dir, version: await installedVersion(dir) });
+      if (generation !== refreshGeneration) return;
     }
 
     const hardware = await hardwareStatus();
+    if (generation !== refreshGeneration) return;
     const catalogName = catalog.name || selectedCatalogLabel();
     const plugins = (Array.isArray(catalog.plugins) ? catalog.plugins : [])
       .filter(plugin => installed.has(plugin.name) || recommendedForHardware(plugin, hardware));
     let updates = 0;
+    const nodes = [];
 
     if (plugins.length) {
       const header = document.createElement('h3');
       header.textContent = catalogName;
       header.style.margin = '0.8em 0 0.2em';
-      listEl.appendChild(header);
+      nodes.push(header);
     }
 
     let requestedCard = null;
@@ -778,9 +803,10 @@ CrossPoint.registerPlugin(async (container, api) => {
         updates += 1;
       }
       const card = pluginCard(plugin, installed);
-      listEl.appendChild(card);
+      nodes.push(card);
       if (pendingReinstall && plugin.name === requestedPlugin) requestedCard = card;
     }
+    showList(nodes);
 
     if (pendingReinstall) {
       if (!requestedCard || !installed.has(requestedPlugin)) {
