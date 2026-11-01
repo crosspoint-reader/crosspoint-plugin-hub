@@ -300,7 +300,8 @@ CrossPoint.registerPlugin(async (container, api) => {
   }
 
   async function fetchLargeText(url) {
-    const cachePath = (PLUGIN_DIR || PLUGINS_DIR + '/pluginhub') + '/.catalog-cache.json';
+    // No leading dot: the device's /download refuses names that start with one.
+    const cachePath = (PLUGIN_DIR || PLUGINS_DIR + '/pluginhub') + '/catalog-cache.json';
     const response = await api.fetchToSd(url, cachePath, {});
     if (response.error || (response.status && (response.status < 200 || response.status >= 300))) {
       throw new Error('download failed (' + (response.status || response.error) + ')');
