@@ -1,0 +1,19 @@
+<h1>KOSync Auto-push</h1>
+<p>Pushes your reading progress to a KOSync server automatically when the reader goes to sleep. No tapping and no browser needed.</p>
+<h2>How it works</h2>
+<ul>
+<li>After a reading session, the reader briefly joins your saved WiFi on sleep (max 10 s, battery 20% or more) and uploads the progress.</li>
+<li>If WiFi is unavailable, the push waits for the next sleep or WiFi connection.</li>
+<li>Works with sync.crosspointreader.com, sync.koreader.rocks or a self-hosted KOSync server.</li>
+</ul>
+<h2>Limits</h2>
+<ul>
+<li><strong>Upload only.</strong> Use Sync Progress in the reader menu to pull.</li>
+<li><strong>Percentage only</strong>, not the exact KOReader position. KOReader may jump to the start of the book, so set its "Sync to a newer state" to Prompt or Disable.</li>
+<li>Books are matched by the binary document hash (the KOReader default).</li>
+</ul>
+<h2>Setup</h2>
+<ul>
+<li>Restart the reader once after installing.</li>
+<li>In the web UI, open Plugins, fill in KOSync Auto-push, press Test login, then Save.</li>
+</ul>
