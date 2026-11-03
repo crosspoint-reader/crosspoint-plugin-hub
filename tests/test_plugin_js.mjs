@@ -149,12 +149,33 @@ test('browser hub loads custom catalogs and only offers directional updates', as
         files: ['manifest.json', 'device.json', 'plugin.js'],
       },
       {
+        name: 'second-update',
+        title: 'Aardvark Update',
+        version: '1.1.0',
+        base: 'https://example.test/second-update/',
+        files: ['manifest.json', 'plugin.js'],
+      },
+      {
         name: 'x4-only',
         title: 'X4 Only',
         version: '1.0.0',
         base: 'https://example.test/x4/',
         files: ['manifest.json'],
         compatibility: { advisory: 'models=x4|x4pro' },
+      },
+      {
+        name: 'z-alpha',
+        title: 'alpha',
+        version: '1.0.0',
+        base: 'https://example.test/z-alpha/',
+        files: ['manifest.json', 'plugin.js'],
+      },
+      {
+        name: 'a-alpha',
+        title: 'ALPHA',
+        version: '1.0.0',
+        base: 'https://example.test/a-alpha/',
+        files: ['manifest.json', 'plugin.js'],
       },
       {
         name: 'community-only',
@@ -198,6 +219,9 @@ test('browser hub loads custom catalogs and only offers directional updates', as
       if (path === '/.crosspoint/plugins/sampleplugin/manifest.json') {
         return response({ text: JSON.stringify({ version: '0.1.2.1' }) });
       }
+      if (path === '/.crosspoint/plugins/second-update/manifest.json') {
+        return response({ text: JSON.stringify({ version: '1.0.0' }) });
+      }
       if (path === '/.crosspoint/plugins/pluginhub/catalog-cache.json') {
         return response({ text: JSON.stringify(communityCatalog) });
       }
@@ -212,6 +236,7 @@ test('browser hub loads custom catalogs and only offers directional updates', as
             { name: 'pluginhub', isDirectory: true },
             { name: 'sample-newer', isDirectory: true },
             { name: 'sampleplugin', isDirectory: true },
+            { name: 'second-update', isDirectory: true },
           ],
         });
       }
@@ -286,19 +311,26 @@ test('browser hub loads custom catalogs and only offers directional updates', as
   let cards = document.elements['ph-list'].children.filter(
     (child) => child.className === 'setting-row'
   );
-  assert.equal(cards.length, 3);
+  assert.equal(cards.length, 6);
   assert.ok(cards.some((card) => card.id === 'ph-plugin-sample-newer'));
   assert.ok(!cards.some((card) => card.id === 'ph-plugin-x4-only'));
+  // Updates sort by title, then other entries by title and name (case-insensitive).
   assert.deepEqual(cards.map((card) => card.id), [
+    'ph-plugin-second-update',
     'ph-plugin-sampleplugin',
+    'ph-plugin-a-alpha',
+    'ph-plugin-z-alpha',
     'ph-plugin-community-only',
     'ph-plugin-sample-newer',
   ]);
   assert.equal(cards[0].children[1].children[0].textContent, 'Update');
-  assert.equal(cards[1].children[1].children[0].textContent, 'Install');
-  assert.equal(cards[2].children[1].children[0].textContent, 'Reinstall');
-  assert.match(cards[2].children[1].children[0].className, /ph-btn-reinstall/);
-  assert.match(cards[2].children[1].children.find(child => child.textContent === 'Remove').className, /ph-btn-remove/);
+  assert.equal(cards[1].children[1].children[0].textContent, 'Update');
+  for (const card of cards.slice(2, 5)) {
+    assert.equal(card.children[1].children[0].textContent, 'Install');
+  }
+  assert.equal(cards[5].children[1].children[0].textContent, 'Reinstall');
+  assert.match(cards[5].children[1].children[0].className, /ph-btn-reinstall/);
+  assert.match(cards[5].children[1].children.find(child => child.textContent === 'Remove').className, /ph-btn-remove/);
   for (const card of cards) {
     assert.equal(card.style.display, 'grid');
     assert.equal(card.style.gridTemplateColumns, 'minmax(0, 1fr) max-content');
@@ -308,7 +340,7 @@ test('browser hub loads custom catalogs and only offers directional updates', as
     assert.equal(card.children[1].style.justifySelf, 'end');
     assert.equal(card.children[1].style.marginLeft, '0');
   }
-  assert.match(document.elements['ph-status'].textContent, /3 plugins available, 1 update/);
+  assert.match(document.elements['ph-status'].textContent, /6 plugins available, 2 updates/);
 
   assert.deepEqual(fetchToSdCalls, [
     { url: COMMUNITY_CATALOG, dest: '/.crosspoint/plugins/pluginhub/catalog-cache.json' },
