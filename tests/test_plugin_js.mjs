@@ -289,9 +289,16 @@ test('browser hub loads custom catalogs and only offers directional updates', as
   assert.equal(cards.length, 3);
   assert.ok(cards.some((card) => card.id === 'ph-plugin-sample-newer'));
   assert.ok(!cards.some((card) => card.id === 'ph-plugin-x4-only'));
-  assert.equal(cards[0].children[1].children[0].textContent, 'Reinstall');
-  assert.match(cards[0].children[1].children[0].className, /ph-btn-reinstall/);
-  assert.match(cards[0].children[1].children.find(child => child.textContent === 'Remove').className, /ph-btn-remove/);
+  assert.deepEqual(cards.map((card) => card.id), [
+    'ph-plugin-sampleplugin',
+    'ph-plugin-community-only',
+    'ph-plugin-sample-newer',
+  ]);
+  assert.equal(cards[0].children[1].children[0].textContent, 'Update');
+  assert.equal(cards[1].children[1].children[0].textContent, 'Install');
+  assert.equal(cards[2].children[1].children[0].textContent, 'Reinstall');
+  assert.match(cards[2].children[1].children[0].className, /ph-btn-reinstall/);
+  assert.match(cards[2].children[1].children.find(child => child.textContent === 'Remove').className, /ph-btn-remove/);
   for (const card of cards) {
     assert.equal(card.style.display, 'grid');
     assert.equal(card.style.gridTemplateColumns, 'minmax(0, 1fr) max-content');
@@ -301,8 +308,6 @@ test('browser hub loads custom catalogs and only offers directional updates', as
     assert.equal(card.children[1].style.justifySelf, 'end');
     assert.equal(card.children[1].style.marginLeft, '0');
   }
-  assert.equal(cards[1].children[1].children[0].textContent, 'Update');
-  assert.equal(cards[2].children[1].children[0].textContent, 'Install');
   assert.match(document.elements['ph-status'].textContent, /3 plugins available, 1 update/);
 
   assert.deepEqual(fetchToSdCalls, [

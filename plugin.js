@@ -843,8 +843,21 @@ CrossPoint.registerPlugin(async (container, api) => {
     const hardware = await hardwareStatus();
     if (generation !== refreshGeneration) return;
     const catalogName = catalog.name || selectedCatalogLabel();
+    const isUpdateAvailable = (plugin) => {
+      const local = installed.get(plugin.name);
+      return Boolean(local && hasUpdate(local.version, plugin.version));
+    };
     const plugins = (Array.isArray(catalog.plugins) ? catalog.plugins : [])
-      .filter(plugin => installed.has(plugin.name) || recommendedForHardware(plugin, hardware));
+      .filter(plugin => installed.has(plugin.name) || recommendedForHardware(plugin, hardware))
+      .sort((a, b) => {
+        const aUpdate = isUpdateAvailable(a);
+        const bUpdate = isUpdateAvailable(b);
+        if (aUpdate !== bUpdate) return aUpdate ? -1 : 1;
+        const titleA = String(a.title || a.name);
+        const titleB = String(b.title || b.name);
+        return titleA.localeCompare(titleB, undefined, { sensitivity: 'base' }) ||
+          String(a.name).localeCompare(String(b.name), undefined, { sensitivity: 'base' });
+      });
     let updates = 0;
     const nodes = [];
 
@@ -857,12 +870,7 @@ CrossPoint.registerPlugin(async (container, api) => {
 
     let requestedCard = null;
     for (const plugin of plugins) {
-      if (
-        installed.has(plugin.name) &&
-        hasUpdate(installed.get(plugin.name).version, plugin.version)
-      ) {
-        updates += 1;
-      }
+      if (isUpdateAvailable(plugin)) updates += 1;
       const card = pluginCard(plugin, installed);
       nodes.push(card);
       if (pendingReinstall && plugin.name === requestedPlugin) requestedCard = card;
