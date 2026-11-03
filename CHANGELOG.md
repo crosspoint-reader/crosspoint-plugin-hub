@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.14 (2026-11-03)
+
+- Show plugins with available updates first in the browser WebUI, then sort both groups alphabetically by title and plugin ID.
+- Keep the existing plugin list visible and inactive during catalog refreshes, avoiding page jumps and stale actions.
+- Reduce device network requests with a 15-minute browser catalog cache, catalog-based Plugin Hub version checks, and fewer unnecessary configuration writes.
+- Stream larger catalog downloads through the SD-card fallback and use a cache filename accepted by the device web server.
+- Expand browser tests for update ordering, overlapping refreshes, cached downloads, and configuration preservation.
+
 ## 0.1.13 (2026-10-29)
 
 - Preserve existing plugin `config.json` settings during browser-based updates and reinstalls while retaining packaged defaults for first-time installations.
