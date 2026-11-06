@@ -25,6 +25,7 @@ from build_catalog import (GitHubClient, GitHubRateLimitError, CatalogError,
                            load_blacklist, is_blacklisted_repository,
                            markdown_details_to_html, DETAILS_OUTPUT_DIR,
                            MAX_DETAILS_SOURCE_BYTES, normalize_compatibility)
+from catalog_partitions import COMMUNITY_NOTICE
 
 ROOT = Path(__file__).resolve().parents[1]
 ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")
@@ -458,8 +459,8 @@ def build(client, output:Path, legacy_index:Path, catalog_repository="crosspoint
         lists.append({
             "title": title, "url":f"https://raw.githubusercontent.com/{catalog_repository}/{catalog_ref}/{filename}",
             "kind":kind, "items":"items", "requires":[capability],
-            "notice":{"title":title,"message":"Third-party community content. Verify the source before installation.",
-                      "confirm":"Continue","cancel":"Go Back"}
+            "notice":dict(COMMUNITY_NOTICE, title=title,
+                           message="Third-party community content. Verify the source before installation.")
         })
     write_if_changed(output/"catalog-lists-capabilities.json",{"schema_version":2,"lists":lists})
     write_if_changed(output/"duplicate-extension-ids.json",{

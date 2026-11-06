@@ -7,6 +7,8 @@ from typing import Any
 COMMUNITY_CATALOG_MAX_BYTES = 1024 * 1024
 COMMUNITY_LIST_INDEX = "catalog-lists.json"
 COMMUNITY_NOTICE = {
+    "id": "community-content",
+    "once": True,
     "title": "Community Plugins",
     "message": "Third-party plugins. Not vetted by Dev Team.",
     "confirm": "Continue",

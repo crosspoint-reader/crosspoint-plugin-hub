@@ -1180,6 +1180,8 @@ class CatalogBuilderTests(unittest.TestCase):
         self.assertEqual(len(entries), len(partitions))
         for entry in entries:
             self.assertTrue(entry["title"].startswith("Community Plugins ["))
+            self.assertEqual(entry["notice"]["id"], "community-content")
+            self.assertIs(entry["notice"]["once"], True)
             self.assertEqual(entry["notice"]["message"], "Third-party plugins. Not vetted by Dev Team.")
             self.assertEqual(entry["notice"]["confirm"], "Continue")
             self.assertEqual(entry["notice"]["cancel"], "Go Back")

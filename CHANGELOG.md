@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Declare a shared one-time acknowledgement ID in community catalog notices for future firmware support, while retaining the existing warning behavior on older firmware.
+
 ## 0.1.15 (2026-11-06)
 
 - Enforce firmware-family, plugin API minimum, and required capabilities when listing plugins in the browser WebUI, matching native catalog compatibility rules.

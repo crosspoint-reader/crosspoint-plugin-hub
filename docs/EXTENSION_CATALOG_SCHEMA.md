@@ -27,7 +27,7 @@ Every entry in lists contains:
 - kind: one of plugin, theme-pack, wallpaper-pack
 - items: the field containing entries in that catalog, either plugins or items
 - requires: all-of firmware capability identifiers
-- notice: optional title/message/confirm/cancel text
+- notice: optional title/message/confirm/cancel text, plus `id` (shared acknowledgement key) and `once` (boolean) metadata. The three community catalogs use `id=community-content` and `once=true`; current firmware ignores these new fields, and only a future firmware update will persist acknowledgement after **Continue**.
 
 Existing plugin lists and their URLs are copied from the legacy index, with
 kind=plugin, items=plugins, requires=[catalog.lists]. They are **not** removed

@@ -404,7 +404,10 @@ class ExtensionCatalogTests(unittest.TestCase):
             root = Path(temp)
             legacy = root / "catalog-lists.json"
             legacy.write_text(json.dumps({"schema_version":1,"lists":[
-                {"title":"Community Plugins","url":"https://example.org/community-catalog.json"}
+                {"title":"Community Plugins","url":"https://example.org/community-catalog.json",
+                 "notice":{"id":"community-content","once":True,"title":"Community Plugins",
+                           "message":"Third-party plugins. Not vetted by Dev Team.",
+                           "confirm":"Continue","cancel":"Go Back"}}
             ]}),encoding="utf-8")
             original = legacy.read_bytes()
             with patch.object(ext,"discover",return_value=[]):
@@ -415,6 +418,9 @@ class ExtensionCatalogTests(unittest.TestCase):
             self.assertEqual([l["kind"] for l in index["lists"]],
                              ["plugin","theme-pack","wallpaper-pack"])
             self.assertEqual(index["lists"][2]["requires"],["wallpaper.packs.v1"])
+            self.assertTrue(all(entry["notice"]["id"] == "community-content" for entry in index["lists"]))
+            self.assertTrue(all(entry["notice"]["once"] is True for entry in index["lists"]))
+            self.assertEqual(index["lists"][0]["notice"], json.loads(original)["lists"][0]["notice"])
             old_time = (root/"catalog-lists-capabilities.json").read_bytes()
             with patch.object(ext,"discover",return_value=[]):
                 ext.build(object(),root,legacy)
