@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 import build_extension_catalog as ext
+import build_catalog
 
 
 def bmp(w, h):
@@ -403,10 +404,20 @@ class ExtensionCatalogTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             legacy = root / "catalog-lists.json"
-            legacy.write_text(json.dumps({"schema_version":1,"lists":[
-                {"title":"Community Plugins","url":"https://example.org/community-catalog.json"}
-            ]}),encoding="utf-8")
+            build_catalog.write_community_catalogs(
+                root / "community-catalog.json", legacy, [],
+                "crosspoint-reader/crosspoint-plugin-hub", "main",
+                build_catalog.COMMUNITY_CATALOG_MAX_BYTES,
+            )
             original = legacy.read_bytes()
+            expected_plugin_notice = {
+                "id": "community-content", "once": True, "title": "Community Plugins",
+                "message": "Third-party plugins. Not vetted by Dev Team.",
+                "confirm": "Continue", "cancel": "Go Back",
+            }
+            legacy_lists = json.loads(original)["lists"]
+            self.assertEqual(len(legacy_lists), 1)
+            self.assertEqual(legacy_lists[0]["notice"], expected_plugin_notice)
             with patch.object(ext,"discover",return_value=[]):
                 result = ext.build(object(),root,legacy)
             self.assertEqual(result["theme-pack"],0)
@@ -415,6 +426,13 @@ class ExtensionCatalogTests(unittest.TestCase):
             self.assertEqual([l["kind"] for l in index["lists"]],
                              ["plugin","theme-pack","wallpaper-pack"])
             self.assertEqual(index["lists"][2]["requires"],["wallpaper.packs.v1"])
+            self.assertEqual(index["lists"][0]["notice"], expected_plugin_notice)
+            for entry, title in zip(index["lists"][1:], ("Community Themes", "Community Wallpaper Packs")):
+                self.assertEqual(entry["notice"], {
+                    "id": "community-content", "once": True, "title": title,
+                    "message": "Third-party community content. Verify the source before installation.",
+                    "confirm": "Continue", "cancel": "Go Back",
+                })
             old_time = (root/"catalog-lists-capabilities.json").read_bytes()
             with patch.object(ext,"discover",return_value=[]):
                 ext.build(object(),root,legacy)

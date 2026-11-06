@@ -182,6 +182,8 @@ A list index entry may include:
   "title": "Community Plugins",
   "url": "https://example.org/community-catalog.json",
   "notice": {
+    "id": "community-content",
+    "once": true,
     "title": "Community Plugins",
     "message": "Third-party plugins. Not vetted by Dev Team.",
     "confirm": "Continue",
@@ -189,6 +191,8 @@ A list index entry may include:
   }
 }
 ```
+
+`notice.id` is a shared acknowledgement identifier and `notice.once` opts in to future firmware persistence. Plugin Hub uses the same `community-content` ID across Plugins, Themes, Wallpaper Packs, and any plugin-catalog shards, so a supported firmware would show the notice once per device after **Continue** is accepted. **Go Back** must not acknowledge it. Existing firmware ignores these optional fields and continues to display notices whenever a list is opened. A future firmware implementation should scope IDs to the originating plugin and persist them across restarts; changing the notice policy can use a new ID.
 
 The current firmware contract also supports catalog bundle installation, installed-version tracking, compatibility filtering, and optional item details. These capabilities are generic plugin-system features and may be used by any plugin.
 
