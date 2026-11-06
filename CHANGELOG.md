@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.16 (2026-11-06)
 
 - Declare a shared one-time acknowledgement ID in community catalog notices for future firmware support, while retaining the existing warning behavior on older firmware.
 
