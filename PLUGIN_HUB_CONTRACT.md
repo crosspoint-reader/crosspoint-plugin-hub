@@ -134,6 +134,13 @@ Supported restrictions are:
 
 Use these only for real requirements. Do not require a capability merely because it improves presentation or convenience.
 
+The native catalog and Plugin Hub WebUI enforce these mandatory restrictions. The WebUI reads
+`firmwareFamily`, `pluginApi`, and `pluginCapabilities` from `/api/status`; if firmware does not
+advertise the metadata needed to verify a requirement, the WebUI does not offer that
+plugin for installation. Already-installed incompatible plugins remain visible for removal,
+but cannot be updated or reinstalled through the WebUI. Hardware recommendations are
+separate, advisory discovery filters.
+
 Current CrossPoint advertises:
 
 ```text

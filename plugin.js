@@ -150,18 +150,51 @@ CrossPoint.registerPlugin(async (container, api) => {
     }
   }
 
-  // Discovery advisory: if firmware does not advertise hardware details,
-  // preserve legacy behavior. Never consult this during installation.
-  async function hardwareStatus() {
+  async function firmwareStatus() {
     try {
       const response = await fetch('/api/status');
       if (!response.ok) return null;
       const info = await response.json();
-      if (typeof info.deviceModel !== 'string' || !Number.isFinite(info.psramBytes)) return null;
-      return { model: info.deviceModel, psramBytes: info.psramBytes };
+      return info && typeof info === 'object' && !Array.isArray(info) ? info : null;
     } catch (_) {
       return null;
     }
+  }
+
+  // Mandatory compatibility is independent of hardware recommendations.
+  // Older firmware without status metadata cannot satisfy declared requirements.
+  function compatibleWithFirmware(plugin, firmware) {
+    const compatibility = plugin && plugin.compatibility;
+    if (!compatibility || typeof compatibility !== 'object') return true;
+
+    const family = compatibility.firmware_family;
+    if (family != null && family !== '') {
+      if (typeof family !== 'string' || typeof firmware?.firmwareFamily !== 'string' ||
+          !family.split(',').map(token => token.trim()).includes(firmware.firmwareFamily)) return false;
+    }
+
+    const apiMin = compatibility.plugin_api_min;
+    if (apiMin != null && apiMin !== '') {
+      const parsed = typeof apiMin === 'string' && /^\d+$/.test(apiMin.trim())
+        ? Number(apiMin.trim()) : apiMin;
+      if (!Number.isSafeInteger(parsed) || parsed < 0 ||
+          !Number.isSafeInteger(firmware?.pluginApi) || firmware.pluginApi < parsed) return false;
+    }
+
+    const required = compatibility.requires;
+    if (required != null && required !== '') {
+      if (typeof required !== 'string' || typeof firmware?.pluginCapabilities !== 'string') return false;
+      const advertised = new Set(firmware.pluginCapabilities.split(',').map(token => token.trim()));
+      if (required.split(',').some(token => !token.trim() || !advertised.has(token.trim()))) return false;
+    }
+    return true;
+  }
+
+  // Discovery advisory: if firmware does not advertise hardware details,
+  // preserve legacy behavior. Never consult this during installation.
+  function hardwareFromStatus(info) {
+    if (!info || typeof info.deviceModel !== 'string' || !Number.isFinite(info.psramBytes)) return null;
+    return { model: info.deviceModel, psramBytes: info.psramBytes };
   }
 
   function recommendedForHardware(plugin, hardware) {
@@ -669,12 +702,12 @@ CrossPoint.registerPlugin(async (container, api) => {
     await saveConfig();
   };
 
-  function pluginCard(plugin, installed) {
+  function pluginCard(plugin, installed, compatible) {
     const installedState = installed.get(plugin.name) || null;
     const isInstalled = installedState !== null;
     const localVersion = installedState ? installedState.version : null;
     const updateAvailable =
-      isInstalled && hasUpdate(localVersion, plugin.version);
+      compatible && isInstalled && hasUpdate(localVersion, plugin.version);
 
     const card = document.createElement('div');
     card.className = 'setting-row';
@@ -689,7 +722,10 @@ CrossPoint.registerPlugin(async (container, api) => {
     card.style.gap = '12px';
 
     let state = '';
-    if (updateAvailable) {
+    if (!compatible) {
+      state = ' <span style="color:#c0392b">Installed v' +
+        escapeHtml(localVersion || '?') + ' — incompatible with this firmware</span>';
+    } else if (updateAvailable) {
       state =
         ' <span style="color:#c0392b">Update available (v' +
         escapeHtml(localVersion || '?') +
@@ -737,12 +773,14 @@ CrossPoint.registerPlugin(async (container, api) => {
 
     const install = document.createElement('button');
     install.type = 'button';
-    install.className = 'btn-small btn-add' + (isInstalled && !updateAvailable ? ' ph-btn-reinstall' : '');
-    const originalLabel = updateAvailable
-      ? 'Update'
-      : (isInstalled ? 'Reinstall' : 'Install');
+    install.className = 'btn-small btn-add' +
+      (compatible && isInstalled && !updateAvailable ? ' ph-btn-reinstall' : '');
+    const originalLabel = !compatible ? 'Unavailable' : (updateAvailable
+      ? 'Update' : (isInstalled ? 'Reinstall' : 'Install'));
     install.textContent = originalLabel;
+    install.disabled = !compatible;
     install.onclick = async () => {
+      if (!compatible) return;
       install.disabled = true;
       const verb = updateAvailable ? 'Updating' : 'Installing';
       status(verb + ' ' + (plugin.title || plugin.name) + '…');
@@ -840,15 +878,18 @@ CrossPoint.registerPlugin(async (container, api) => {
       if (generation !== refreshGeneration) return;
     }
 
-    const hardware = await hardwareStatus();
+    const firmware = await firmwareStatus();
     if (generation !== refreshGeneration) return;
+    const hardware = hardwareFromStatus(firmware);
     const catalogName = catalog.name || selectedCatalogLabel();
     const isUpdateAvailable = (plugin) => {
       const local = installed.get(plugin.name);
-      return Boolean(local && hasUpdate(local.version, plugin.version));
+      return Boolean(local && compatibleWithFirmware(plugin, firmware) &&
+        hasUpdate(local.version, plugin.version));
     };
     const plugins = (Array.isArray(catalog.plugins) ? catalog.plugins : [])
-      .filter(plugin => installed.has(plugin.name) || recommendedForHardware(plugin, hardware))
+      .filter(plugin => installed.has(plugin.name) ||
+        (compatibleWithFirmware(plugin, firmware) && recommendedForHardware(plugin, hardware)))
       .sort((a, b) => {
         const aUpdate = isUpdateAvailable(a);
         const bUpdate = isUpdateAvailable(b);
@@ -859,6 +900,7 @@ CrossPoint.registerPlugin(async (container, api) => {
           String(a.name).localeCompare(String(b.name), undefined, { sensitivity: 'base' });
       });
     let updates = 0;
+    let unavailable = 0;
     const nodes = [];
 
     if (plugins.length) {
@@ -870,8 +912,10 @@ CrossPoint.registerPlugin(async (container, api) => {
 
     let requestedCard = null;
     for (const plugin of plugins) {
+      const compatible = compatibleWithFirmware(plugin, firmware);
       if (isUpdateAvailable(plugin)) updates += 1;
-      const card = pluginCard(plugin, installed);
+      if (!compatible) unavailable += 1;
+      const card = pluginCard(plugin, installed, compatible);
       nodes.push(card);
       if (pendingReinstall && plugin.name === requestedPlugin) requestedCard = card;
     }
@@ -884,8 +928,14 @@ CrossPoint.registerPlugin(async (container, api) => {
         clearManagementIntent();
         return;
       }
-      clearManagementIntent();
       const action = requestedCard.children[1].children[0];
+      if (action.disabled) {
+        status('Reinstall unavailable: ' + requestedPlugin +
+          ' is incompatible with this firmware.');
+        clearManagementIntent();
+        return;
+      }
+      clearManagementIntent();
       if (requestedCard.scrollIntoView) requestedCard.scrollIntoView({block:'center'});
       if (typeof confirm === 'function' && !confirm('Reinstall ' + requestedPlugin +
           ' from the selected Plugin Hub catalog?')) {
@@ -896,11 +946,16 @@ CrossPoint.registerPlugin(async (container, api) => {
       return;
     }
 
+    const available = plugins.length - unavailable;
     let message =
-      plugins.length +
+      available +
       ' plugin' +
-      (plugins.length === 1 ? '' : 's') +
+      (available === 1 ? '' : 's') +
       ' available';
+    if (unavailable) {
+      message += ', ' + unavailable + ' incompatible installed plugin' +
+        (unavailable === 1 ? '' : 's');
+    }
     if (updates) {
       message +=
         ', ' +

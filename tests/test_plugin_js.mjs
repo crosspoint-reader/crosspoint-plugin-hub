@@ -638,10 +638,14 @@ function fakeStorage(entries = {}) {
 
 // A device with Plugin Hub 0.1.1 and one other plugin installed, and the given
 // community catalog and config text.
-function hubDevice({ catalog, configText = null }) {
-  const calls = { relay: [], fetchToSd: [], writes: [] };
-  async function fetch(url) {
-    if (url === '/api/status') return response({ json: { deviceModel: 'x4', psramBytes: 0 } });
+function hubDevice({
+  catalog, configText = null, statusInfo = { deviceModel: 'x4', psramBytes: 0 }, installed = [],
+}) {
+  const calls = { relay: [], fetchToSd: [], writes: [], removes: [] };
+  async function fetch(url, options) {
+    if (url === '/api/status') {
+      return statusInfo === null ? response({ status: 404 }) : response({ json: statusInfo });
+    }
     if (url.startsWith('/download?path=')) {
       const path = new URL(url, 'http://device').searchParams.get('path');
       if (path === '/.crosspoint/plugins/pluginhub/config.json') {
@@ -650,6 +654,11 @@ function hubDevice({ catalog, configText = null }) {
       if (path === '/.crosspoint/plugins/pluginhub/manifest.json') {
         return response({ text: JSON.stringify({ version: '0.1.1' }) });
       }
+      const installedPlugin = installed.find(entry =>
+        path === '/.crosspoint/plugins/' + entry.name + '/manifest.json');
+      if (installedPlugin) {
+        return response({ text: JSON.stringify({ version: installedPlugin.version }) });
+      }
       if (path === '/.crosspoint/plugins/pluginhub/catalog-cache.json') {
         return response({ text: JSON.stringify(catalog) });
       }
@@ -657,9 +666,15 @@ function hubDevice({ catalog, configText = null }) {
     }
     if (url.startsWith('/api/files?path=')) {
       const path = new URL(url, 'http://device').searchParams.get('path');
-      return response({ json: path === '/.crosspoint/plugins' ? [{ name: 'pluginhub', isDirectory: true }] : [] });
+      return response({ json: path === '/.crosspoint/plugins'
+        ? [{ name: 'pluginhub', isDirectory: true },
+          ...installed.map(({ name }) => ({ name, isDirectory: true }))]
+        : [] });
     }
-    if (url === '/delete') return response({});
+    if (url === '/delete') {
+      calls.removes.push(new URLSearchParams(options.body).get('path'));
+      return response({});
+    }
     throw new Error('unexpected fetch: ' + url);
   }
   const api = {
@@ -688,6 +703,125 @@ const SMALL_CATALOG = {
   name: 'Community Plugins',
   plugins: [{ name: 'pluginhub', title: 'Plugin Hub', version: '0.1.1', base: 'https://example.test/hub/', files: ['plugin.js'] }],
 };
+
+test('WebUI enforces firmware family, API minimum, and all required capabilities', async () => {
+  const entry = (name, compatibility) => ({
+    name, title: name, version: '1.0.0',
+    base: 'https://example.test/' + name + '/', files: ['manifest.json'],
+    ...(compatibility ? { compatibility } : {}),
+  });
+  const catalog = {
+    plugins: [
+      entry('free'),
+      entry('family', { firmware_family: 'other,crosspoint' }),
+      entry('wrong-family', { firmware_family: 'other' }),
+      entry('api-one', { plugin_api_min: 1 }),
+      entry('api-string', { plugin_api_min: '1' }),
+      entry('api-two', { plugin_api_min: 2 }),
+      entry('api-invalid', { plugin_api_min: '1x' }),
+      entry('localsend', { requires: 'transfer.localsend.v1' }),
+      entry('other-capability', { requires: 'transfer.localsend.v1.extra' }),
+      entry('all-requirements', { requires: 'catalog.lists,transfer.localsend.v1' }),
+      entry('one-requirement', { requires: 'catalog.lists' }),
+      entry('bad-requirements', { requires: 'catalog.lists,' }),
+      entry('hardware-hidden', { advisory: 'models=x3' }),
+    ],
+  };
+  const firmware = {
+    firmwareFamily: 'crosspoint', pluginApi: 1,
+    pluginCapabilities: 'catalog.lists', deviceModel: 'x4', psramBytes: 0,
+  };
+  const cases = [
+    {
+      name: 'vanilla firmware',
+      statusInfo: firmware,
+      expected: ['free', 'family', 'api-one', 'api-string', 'one-requirement'],
+    },
+    {
+      name: 'LocalSend capability added',
+      statusInfo: { ...firmware, pluginCapabilities: 'catalog.lists,transfer.localsend.v1' },
+      expected: ['free', 'family', 'api-one', 'api-string', 'one-requirement', 'localsend', 'all-requirements'],
+    },
+    {
+      name: 'new API and LocalSend capability',
+      statusInfo: { ...firmware, pluginApi: 2, pluginCapabilities: 'catalog.lists,transfer.localsend.v1' },
+      expected: ['free', 'family', 'api-one', 'api-string', 'api-two', 'one-requirement', 'localsend', 'all-requirements'],
+    },
+    {
+      name: 'no status endpoint',
+      statusInfo: null,
+      expected: ['free', 'hardware-hidden'],
+    },
+    {
+      name: 'partial/malformed status fields',
+      statusInfo: { firmwareFamily: 'crosspoint', pluginApi: '2', pluginCapabilities: ['catalog.lists'] },
+      expected: ['free', 'family', 'hardware-hidden'],
+    },
+  ];
+  for (const { name, statusInfo, expected } of cases) {
+    const document = fakeDocument();
+    const device = hubDevice({ catalog, statusInfo });
+    await (await loadPlugin({ document, fetch: device.fetch }))({ innerHTML: '' }, device.api);
+    const shown = document.elements['ph-list'].children
+      .filter(child => child.className === 'setting-row')
+      .map(child => child.id.replace('ph-plugin-', '')).sort();
+    assert.deepEqual(shown, expected.sort(), name);
+    assert.equal(document.elements['ph-status'].textContent,
+      expected.length + ' plugins available.', name);
+  }
+});
+
+test('installed incompatible plugins stay removable but cannot update or reinstall', async () => {
+  const catalog = { plugins: [{
+    name: 'localsend', title: 'LocalSend', version: '0.2.0',
+    base: 'https://example.test/localsend/', files: ['manifest.json', 'plugin.js'],
+    compatibility: { requires: 'transfer.localsend.v1' },
+  }] };
+  const installed = [{ name: 'localsend', version: '0.1.0' }];
+  const statusInfo = {
+    firmwareFamily: 'crosspoint', pluginApi: 1,
+    pluginCapabilities: 'catalog.lists', deviceModel: 'x4', psramBytes: 0,
+  };
+  const document = fakeDocument();
+  const device = hubDevice({ catalog, statusInfo, installed });
+  const historyChanges = [];
+  let confirmations = 0;
+  const render = await loadPlugin({
+    document, fetch: device.fetch, URLSearchParams,
+    location: { search: '?plugin=pluginhub&manage=localsend&action=reinstall' },
+    history: { replaceState: (...args) => historyChanges.push(args.at(-1)) },
+    confirm: () => { confirmations++; return true; },
+  });
+  await render({ innerHTML: '' }, device.api);
+
+  const card = document.elements['ph-list'].children.find(child => child.id === 'ph-plugin-localsend');
+  assert.ok(card);
+  assert.match(card.children[0].innerHTML, /incompatible with this firmware/);
+  const install = card.children[1].children[0];
+  assert.equal(install.textContent, 'Unavailable');
+  assert.equal(install.disabled, true);
+  assert.equal(card.children[1].children.find(child => child.textContent === 'Remove').disabled, false);
+  assert.match(document.elements['ph-status'].textContent, /Reinstall unavailable.*incompatible/);
+  assert.deepEqual(historyChanges, ['/plugins?plugin=pluginhub']);
+  assert.equal(confirmations, 0);
+  await install.onclick(); // Even direct invocation must not bypass the disabled action.
+  assert.deepEqual(device.calls.fetchToSd, []);
+  await card.children[1].children.find(child => child.textContent === 'Remove').onclick();
+  assert.deepEqual(device.calls.removes, ['/.crosspoint/plugins/localsend']);
+
+  const compatibleDocument = fakeDocument();
+  const compatible = hubDevice({
+    catalog, installed,
+    statusInfo: { ...statusInfo, pluginCapabilities: 'catalog.lists,transfer.localsend.v1' },
+  });
+  await (await loadPlugin({ document: compatibleDocument, fetch: compatible.fetch }))(
+    { innerHTML: '' }, compatible.api);
+  const enabled = compatibleDocument.elements['ph-list'].children
+    .find(child => child.id === 'ph-plugin-localsend').children[1].children[0];
+  assert.equal(enabled.textContent, 'Update');
+  assert.equal(enabled.disabled, false);
+  assert.equal(compatibleDocument.elements['ph-status'].textContent, '1 plugin available, 1 update.');
+});
 
 test('browser hub reuses cached catalogs until Refresh', async () => {
   const localStorage = fakeStorage();

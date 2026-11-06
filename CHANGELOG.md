@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.15 (2026-11-06)
+
+- Enforce firmware-family, plugin API minimum, and required capabilities when listing plugins in the browser WebUI, matching native catalog compatibility rules.
+- Hide incompatible plugins from installation while retaining already-installed entries for removal and preventing incompatible updates or reinstalls.
+- Preserve hardware-based discovery recommendations and add WebUI compatibility regression coverage.
+
 ## 0.1.14 (2026-11-03)
 
 - Show plugins with available updates first in the browser WebUI, then sort both groups alphabetically by title and plugin ID.
