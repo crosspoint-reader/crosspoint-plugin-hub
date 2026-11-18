@@ -3,7 +3,7 @@ name: Refresh Plugin Catalog
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 */4 * * *"
+    - cron: "11 */4 * * *"
   push:
     branches:
       - main
