@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.17 (2026-11-19)
+
+- Make plugin titles in the browser Plugin Hub open their GitHub repositories in a new tab, reusing existing catalog metadata while preserving their styling and existing controls.
+- Leave titles as plain text when the repository metadata is missing or invalid, and retain visible keyboard focus.
+- Cover valid and malformed repository metadata, unchanged install controls, and Reading Statistics capability filtering with regressions.
+
 ## 0.1.16 (2026-11-06)
 
 - Declare a shared one-time acknowledgement ID in community catalog notices for future firmware support, while retaining the existing warning behavior on older firmware.
