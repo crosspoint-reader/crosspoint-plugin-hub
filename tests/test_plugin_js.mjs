@@ -771,6 +771,34 @@ test('WebUI enforces firmware family, API minimum, and all required capabilities
   }
 });
 
+test('WebUI requires full dashboard v2 support regardless of fork branding', async () => {
+  const catalog = { plugins: [{
+    name: 'reading-statistics', title: 'Reading Statistics', version: '0.1.9',
+    base: 'https://example.test/reading-statistics/', files: ['manifest.json', 'device.json'],
+    compatibility: { requires: 'stats.native.v1,ui.dashboard.v2' },
+  }] };
+  const base = {
+    firmwareFamily: 'crestyl', pluginApi: 1,
+    deviceModel: 'x4', psramBytes: 0,
+  };
+  const cases = [
+    ['old renderer on CRESTYL', 'stats.native.v1,ui.dashboard.v1', false],
+    ['v2 name as prefix', 'stats.native.v1,ui.dashboard.v20', false],
+    ['missing stats collector', 'ui.dashboard.v1,ui.dashboard.v2', false],
+    ['new renderer on CRESTYL', 'stats.native.v1,ui.dashboard.v1,ui.dashboard.v2', true],
+    ['new renderer without old capability', 'stats.native.v1,ui.dashboard.v2', true],
+  ];
+  for (const [name, pluginCapabilities, visible] of cases) {
+    const document = fakeDocument();
+    const device = hubDevice({ catalog, statusInfo: { ...base, pluginCapabilities } });
+    await (await loadPlugin({ document, fetch: device.fetch }))({ innerHTML: '' }, device.api);
+    const shown = document.elements['ph-list'].children
+      .filter(child => child.className === 'setting-row')
+      .map(child => child.id.replace('ph-plugin-', ''));
+    assert.deepEqual(shown, visible ? ['reading-statistics'] : [], name);
+  }
+});
+
 test('installed incompatible plugins stay removable but cannot update or reinstall', async () => {
   const catalog = { plugins: [{
     name: 'localsend', title: 'LocalSend', version: '0.2.0',

@@ -114,6 +114,14 @@ class CatalogBuilderTests(unittest.TestCase):
         with self.assertRaises(build_catalog.CatalogError):
             build_catalog.normalize_compatibility({"plugin_api_min": -1})
 
+    def test_reading_statistics_v2_requirements_survive_catalog_generation(self):
+        normalized = build_catalog.normalize_compatibility({
+            "requires": ["stats.native.v1", "ui.dashboard.v2"],
+        })
+        self.assertEqual(normalized, {
+            "requires": "stats.native.v1,ui.dashboard.v2",
+        })
+
     def test_unparseable_digit_strings_raise_catalog_error(self):
         cases = ["²"]
         limit = getattr(sys, "get_int_max_str_digits", lambda: 0)()
