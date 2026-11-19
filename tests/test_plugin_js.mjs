@@ -704,6 +704,50 @@ const SMALL_CATALOG = {
   plugins: [{ name: 'pluginhub', title: 'Plugin Hub', version: '0.1.1', base: 'https://example.test/hub/', files: ['plugin.js'] }],
 };
 
+test('WebUI plugin titles link only to valid GitHub repositories', async () => {
+  const repositories = [
+    ['valid', 'Team-Name/Repo_name.v2', true],
+    ['missing', undefined, false],
+    ['custom-url', 'https://example.test/other', false],
+    ['nested', 'team/repo/tree/main', false],
+    ['injection', 'team/repo" onclick="alert(1)', false],
+    ['dot-segment', 'team/..', false],
+    ['invalid-owner', '-team/repo', false],
+    ['non-string', { owner: 'team', repo: 'repo' }, false],
+  ];
+  const catalog = { plugins: repositories.map(([name, repository]) => ({
+    name, title: name === 'valid' ? 'Linked & Useful' : name,
+    version: '1.0.0',
+    base: 'https://example.test/' + name + '/',
+    files: ['manifest.json'],
+    ...(repository === undefined ? {} : { repository }),
+  })) };
+  const document = fakeDocument();
+  const device = hubDevice({ catalog });
+  const container = { innerHTML: '' };
+  await (await loadPlugin({ document, fetch: device.fetch }))(container, device.api);
+
+  const cards = document.elements['ph-list'].children.filter(
+    (child) => child.className === 'setting-row'
+  );
+  assert.equal(cards.length, repositories.length);
+  assert.match(container.innerHTML, /\.ph-title-link\{color:inherit!important;text-decoration:none!important\}/);
+  for (const [name, , linked] of repositories) {
+    const card = cards.find((child) => child.id === 'ph-plugin-' + name);
+    assert.ok(card, name);
+    const title = card.children[0].innerHTML;
+    assert.equal(title.includes('<a '), linked, name);
+    if (linked) {
+      assert.match(title, /<strong><a class="ph-title-link" href="https:\/\/github\.com\/Team-Name\/Repo_name\.v2" target="_blank" rel="noopener noreferrer"/);
+      assert.match(title, /Linked &amp; Useful<\/a><\/strong>/);
+    } else {
+      assert.match(title, /<strong>[^<]+<\/strong>/, name);
+    }
+    assert.equal(card.children[1].children[0].textContent, 'Install');
+  }
+  assert.equal(device.calls.fetchToSd.length, 0);
+});
+
 test('WebUI enforces firmware family, API minimum, and all required capabilities', async () => {
   const entry = (name, compatibility) => ({
     name, title: name, version: '1.0.0',

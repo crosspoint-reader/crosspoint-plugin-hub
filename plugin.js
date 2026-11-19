@@ -44,6 +44,8 @@ CrossPoint.registerPlugin(async (container, api) => {
     '<style>' +
     '#ph-list .setting-row{display:grid;grid-template-columns:minmax(0,1fr) max-content;align-items:center;gap:12px;width:100%;box-sizing:border-box}' +
     '#ph-list .setting-name{min-width:0;overflow-wrap:anywhere}' +
+    '#ph-list .ph-title-link{color:inherit!important;text-decoration:none!important}' +
+    '#ph-list .ph-title-link:focus-visible{outline:2px solid var(--accent-color);outline-offset:2px}' +
     '#ph-list .setting-control{display:flex;justify-content:flex-end;gap:8px;margin-left:0;flex-wrap:nowrap}' +
     '@media(max-width:600px){#ph-list .setting-row{grid-template-columns:minmax(0,1fr)}' +
     '#ph-list .setting-control{justify-self:end}}' +
@@ -98,6 +100,13 @@ CrossPoint.registerPlugin(async (container, api) => {
     } catch (e) {
       return url;
     }
+  }
+
+  function repositoryPageUrl(repository) {
+    if (typeof repository !== 'string') return null;
+    const match = /^([A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?)\/([A-Za-z0-9._-]{1,100})$/.exec(repository);
+    if (!match || match[2] === '.' || match[2] === '..') return null;
+    return 'https://github.com/' + repository;
   }
 
   function b64(str) {
@@ -748,9 +757,15 @@ CrossPoint.registerPlugin(async (container, api) => {
     meta.className = 'setting-name';
     meta.style.minWidth = '0';
     meta.style.overflowWrap = 'anywhere';
+    const repositoryUrl = repositoryPageUrl(plugin.repository);
     meta.innerHTML =
       '<strong>' +
+      (repositoryUrl
+        ? '<a class="ph-title-link" href="' + escapeHtml(repositoryUrl) +
+          '" target="_blank" rel="noopener noreferrer" title="Open GitHub repository in a new tab">'
+        : '') +
       escapeHtml(plugin.title || plugin.name) +
+      (repositoryUrl ? '</a>' : '') +
       '</strong>' +
       (plugin.author
         ? ' <span style="color:#888">by ' +
