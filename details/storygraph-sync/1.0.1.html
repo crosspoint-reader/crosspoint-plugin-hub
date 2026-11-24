@@ -1,0 +1,17 @@
+<h1>StoryGraph Sync</h1>
+<p>Sync reading progress, per-session reading journals, and start/finish dates from your CrossPoint e-reader directly to <strong>The StoryGraph</strong> from the File Manager Web UI (/files).</p>
+<h2>Highlights</h2>
+<ul>
+<li><strong>Per-session reading diary:</strong> Preserves each individual reader.session sitting (even short or same-day sittings with identical progress) with a persistent local synchronization ledger (sessionId to StoryGraph journalEntryId) and interrupted-sync reconciliation. Books with unposted sessions are flagged <strong>Journal unsynced</strong> and included in <strong>Sync All</strong>, and ambiguous interrupted posts can be resolved in the UI with <strong>Mark Synced</strong> or <strong>Retry</strong>.</li>
+<li><strong>Progress, status, and dates:</strong> Syncs percentage or page progress, marks finished books as <strong>Read</strong> (including books moved into /Read/), and keeps start/finish dates aligned.</li>
+<li><strong>Clean Journals:</strong> Repairs stray 100% / 0% StoryGraph journal artifacts (batch <strong>Clean Journals</strong> under <strong>Tools &amp; Preferences</strong> or per-book <strong>Clean Journal</strong> / <strong>Open Journal ↗</strong> inside <strong>Reading history</strong>) while preserving all ledger-bound and note-bearing sessions, with automatic retry/backoff on transient /api/fetch errors and a watermarked verification cache for already-clean Read books.</li>
+<li><strong>Privacy-first credentials:</strong> Session cookies stay strictly in your browser localStorage and are never written to the microSD card. Smart-paste supports DevTools cookie headers, <strong>Cookie-Editor</strong> JSON (great for phone-only setup), Netscape cookies.txt, and cURL.</li>
+</ul>
+<h2>Compatibility</h2>
+<ul>
+<li>Tested on <strong>CrossInk 2.0.0 RC3</strong> (XTEInk X4 Pro).</li>
+<li>Compatible with <strong>CrossPoint 2.0.0 RC / nightly</strong> (firmware_family: crosspoint, plugin_api &gt;= 1).</li>
+<li>Per-session duration tracking uses reader.session events; firmware builds that only emit reader.exit still track reading progress checkpoints seamlessly.</li>
+</ul>
+<h2>Quick Setup</h2>
+<p>1. Install from <strong>Plugin Hub</strong> (or copy storygraph-sync/ into /.crosspoint/plugins/storygraph-sync/). 2. Enable <strong>Plugins</strong> in device settings and <strong>reboot once</strong> so firmware registers event subscriptions. 3. Start File Transfer, open http://crosspoint.local/files, expand <strong>Account Settings</strong>, paste your StoryGraph cookies (DevTools cookie header on desktop, or <strong>Cookie-Editor → Export → JSON / Header String</strong> on phone), and click <strong>Verify Session</strong>. 4. Link books via <strong>Current Reads</strong>, search, or book URL/ID, then click <strong>Sync All</strong>.</p>
