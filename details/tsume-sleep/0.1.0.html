@@ -1,0 +1,60 @@
+<h1>tsume-sleep — technical details</h1>
+<p>This document explains how the plugin works, the formats involved, and how to run it in the CrossPoint simulator.</p>
+<h2>Architecture</h2>
+<p>CrossPoint plugins are browser-side JavaScript: plugin.js runs in the reader's web UI (the Settings page mount point), with the CrossPoint.registerPlugin host API (api.pluginFile, api.writeFile, api.fetchToSd, api.registerAction, …). All shogi logic — SFEN parsing, piece rendering, reservoir sampling, BMP encoding — lives in plain, dependency-free JS so the same code runs in the browser and under Node for tests (plugin.js exports its core as window.TsumeSleep in the browser and as module.exports under Node).</p>
+<p>Generation flow:</p>
+<p>1. pickProblems(type, count) — for each required mate length, stream data/&lt;file&gt; through the device's /download?path=… endpoint and reservoir-sample exactly ceil(count / lengths) problems per file. Lines are split on \n, parsed, and unparseable lines are skipped silently. 2. renderToCanvas(canvas, W, H, problem, opts) — draws one page. 3. encodeMonoBmp(rgba, W, H) — 1-bit BMP, bottom-up, palette 0 = black / 1 = white, luminance threshold 150. 4. api.writeFile('/sleep/tsume-sleep-NN.bmp', base64) — absolute paths pass protectedpaths::isPluginPath(), so the plugin writes directly into the sleep folder.</p>
+<p>Nothing is written until the user presses <strong>Generate pack</strong> (or a fill job arrives). config.json is stored in the plugin folder and re-read on every page load.</p>
+<h2>Sleep screen behaviour (firmware)</h2>
+<p>From src/activities/boot_sleep/SleepActivity.cpp: with sleepScreen = 2 (Custom), the reader shows /sleep.bmp if it exists; otherwise it cycles the files in /sleep/ at random (no immediate repeats). Images with the exact screen dimensions take the fast path — no scaling — which is why the pack is rendered at the detected native size.</p>
+<h2>Screen sizes</h2>
+<p>/api/status reports device:</p>
+<p>| device | Screen (portrait) | | --- | --- | | X4, xteink_x4_pro, xteink_x4_classic, sticky, m5stack_paper_mono, metalio_eink4, picco | 480×800 | | X3, xteink_x3, xteink_x3_uc8279 | 528×792 | | eego_a4 | 552×768 | | metalio_eink4_plus | 684×1216 |</p>
+<p>The page offers <strong>Auto</strong> (the mapping above) or a forced size, so a wrong device string never breaks generation — worst case the images are scaled by the firmware.</p>
+<h2>Page layout</h2>
+<p>Everything is laid out relative to a reference width of 480 px (s = W / 480), so the same code produces balanced pages on every supported screen:</p>
+<p>`` ┌────────────────────────────┐ │ ▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬ │ │ ▬ TSUME SHOGI ▬            │  double rule masthead │ ▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬ │ │ ♖ 持駒: 桂 歩               │  gote hand (above the board) │  9 8 7 6 5 4 3 2 1         │ │ ┌──────────────────────┐   │ │ │   9×9 board + a…i    │   │  plain kanji; gote pieces rotated │ └──────────────────────┘   │  180° to mark the side │ 持駒: 飛 歩3 ♗             │  sente hand (below the board) │ Sente to play and mate in 5│  task line │ ─────────────────────────  │  thin rule │  ˙˙˙ upside-down solution ˙˙˙ │  PSN moves rotated 180° │ ▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬ │  thick rule └────────────────────────────┘ ``</p>
+<p>The solution line is centred between the two rules and drawn with ctx.rotate(π) about the band centre, so the whole image stays upright while only the moves are inverted. Long solutions wrap to two lines at the mid-token boundary, each line font-fitted independently; when that happens the band grows from 56 px to 76 px (scaled) so the two lines never crowd each other.</p>
+<p>Fonts are the canvas defaults (serif for the page, matching the newspaper style); no web fonts are shipped, so rendering is deterministic across devices.</p>
+<h2>Data format</h2>
+<p>sente-mateN.solutions (from the tsume-generator project, which solves with TsumeSolver.kts / TsumeGenerator.main.kts):</p>
+<p>`` "lns+R4l/1p1p5/p1pkppB1p/6p2/1R7/6P1P/P1PPnPS2/2+b1G1g2/L3K1sNL b 2GS3Pnp 51";"…final SFEN…";"S<em>5b K-5d G</em>5e" ``</p>
+<ul>
+<li>SFEN: 9 rows from the gote perspective (top = rank a… row 0), uppercase</li>
+</ul>
+<p>sente / lowercase gote pieces, + prefix for promotion, then side to move, sente hand, gote hand, turn, move number.</p>
+<ul>
+<li>The hand field 2GS3Pnp means sente holds 2 金, 1 銀, 3 歩 and gote holds</li>
+</ul>
+<p>1 桂, 1 歩 (- = none).</p>
+<ul>
+<li>The PSN move string is whitespace-separated: [+]&lt;piece&gt;&lt;-|*|x&gt;&lt;file&gt;&lt;rank&gt;[+]</li>
+</ul>
+<p>(drops use *, captures x, moves -; a trailing + means the piece promoted, except drops never do).</p>
+<ul>
+<li>The <em>second</em> column (final SFEN) is not used — the board shown is the</li>
+</ul>
+<p>initial position.</p>
+<p>Mate length is inferred from the file name (mate3.solutions → 3, etc.). Note that a mateN file can contain a handful of <em>shorter</em> mates (a position aimed at mate in N that is actually faster); those are kept and the page labels the real length, so the caption always matches the printed solution.</p>
+<p>Reservoir sampling keeps exactly the requested number of problems regardless of file size: each line i is kept with probability min(n, i+1)/… — standard Algorithm R — so the sample is uniform over the whole file with one pass and O(n) memory.</p>
+<h2>1-bit BMP</h2>
+<p>Hand-encoded (no library): 14-byte file header + 40-byte BITMAPINFOHEADER + 8-byte palette (index 0 black, index 1 white), rows bottom-up, each row padded to 4 bytes. This is exactly what the firmware's sleep-screen decoder expects for the fast path.</p>
+<h2>Endpoints used</h2>
+<p>| Endpoint | Use | | --- | --- | | GET /api/status | device name for screen detection | | GET /api/files?path=… | list /, /sleep, plugin data/ | | GET /download?path=… | stream data files for sampling (Content-Length gives the total) | | POST /mkdir?name=… | create /sleep if missing | | POST /delete?path=… | remove old pack files (only tsume-sleep-\d{2}\.bmp) | | GET /api/settings?keys=sleepScreen | check the sleep screen mode | | POST /api/settings | one-click fix to sleepScreen = 2 | | POST /api/plugin-fs | write /sleep/*.bmp and config.json (via api.writeFile) | | POST /api/fetch | device-side download of imported data URLs (via api.fetchToSd) |</p>
+<h2>Testing in the simulator</h2>
+<p>The simulator (crosspoint-simulator) builds the reader firmware natively with PlatformIO and SDL2; tools/run_plugin.py copies the plugin folder onto a virtual SD card and enables the plugin settings. The firmware exposes its web server on http://127.0.0.1:8080 once it has a network, so the plugin page is driven from a real browser (headless Chrome over CDP) — exactly the way a user would use it.</p>
+<p>```sh</p>
+<h1>one-time host deps</h1>
+<p>brew install sdl2 python3 -m pip install platformio</p>
+<h1>add the simulator environments to crosspoint-reader/platformio.ini</h1>
+<h1>(see crosspoint-simulator/sample-platformio-macos.ini), then build:</h1>
+<p>cd crosspoint-reader pio run -e simulator               # X4, 480x800 pio run -e simulator_x3            # X3, 528x792 pio run -e simulator_x4_pro        # X4 Pro, 480x800 pio run -e simulator_eego_a4       # EEGO A4, 552x768</p>
+<h1>start the simulator with the plugin on a kept SD card and bring up the</h1>
+<h1>web server via Home &gt; File Transfer &gt; Create Hotspot (scripted):</h1>
+<p>python3 ../crosspoint-simulator/tools/run_plugin.py \ ../tsume-sleep/tsume-sleep.crosspoint-plugin --headless --sd /tmp/sim-sd \ --program .pio/build/simulator/program \ --script '0:WAIT:Entering activity: Home;400:DOWN;700:DOWN;1000:DOWN;1300:ENTER;\ 400:WAIT:Entering activity: NetworkModeSelection;\ 400:DOWN;700:DOWN;1000:ENTER;400:WAIT:Access Point started!'</p>
+<h1>in another terminal: generate a pack through the real plugin page</h1>
+<p>node test/cdp-plugin.mjs http://127.0.0.1:8080 tsume-sleep /tmp/tsume-x4 ```</p>
+<p>Input-script notes (cost me some runs): times after a WAIT all count from that WAIT's match, not from the previous step; and the EEGO A4 has no physical confirm key — Return is disabled there, so navigate Home/File Transfer with TAP touches (e.g. TAP:276,570 then TAP:276,310 on Create Hotspot at its 552x768 layout) instead of ENTER.</p>
+<p>test/sim-test.sh automates build + hotspot + generate + dimension check for one board. To verify the sleep screen itself, run the same SD card once more with …;1200:SLEEP;2600:SHOT:/tmp/sleep.bmp;… after the AP wait — the firmware logs Loading: /sleep/tsume-sleep-NN.bmp … drawing to 0 x 0 (exact screen size, no scaling) and the screenshot shows a random puzzle page; rotate the image 180° to read the solution. tsume-sleep-05, -16, … were observed across runs, confirming the pack cycles.</p>
+<p>Verified in the simulator: <strong>X4</strong> (480x800, plus the sleep screen), <strong>X3</strong> (528x792), <strong>X4 Pro</strong> (480x800), <strong>EEGO A4</strong> (552x768) — each reported its /api/status device name, auto-detected the right screen, and wrote a 20 image pack of 1-bit BMPs at the native dimensions.</p>
+<p>Unit tests: node test/test.js (parsing, sampling, encoder, mapping). Visual check: test/preview.html (serve the repo, e.g. python3 -m http.server), which renders the first problem of each data file at every supported size, shown both normally and with the device flipped.</p>
